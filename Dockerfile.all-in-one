@@ -1,0 +1,40 @@
+FROM python:3.11-slim
+
+# Install system dependencies and SingleFile
+RUN apt-get update && apt-get install -y \
+    wget \
+    curl \
+    chromium \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install SingleFile from npm (global)
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y nodejs \
+    && npm install -g "single-file-cli@latest" \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Install Python dependencies
+RUN pip install --no-cache-dir \
+    watchdog \
+    typer \
+    rich \
+    pydantic \
+    docker
+
+# Create necessary directories
+RUN mkdir -p /app/logs /data/incoming /data/archive /data/scripts
+
+# Copy CLI startup script
+COPY container_startup_cli.sh /app/
+RUN chmod +x /app/container_startup_cli.sh
+
+# Set environment for Chromium
+ENV CHROME_PATH=/usr/bin/chromium
+ENV DISPLAY=:99
+
+# Entry point
+CMD ["/app/container_startup_cli.sh"]

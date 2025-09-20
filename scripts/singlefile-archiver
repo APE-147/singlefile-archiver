@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Auto-generated wrapper for singlefile-archiver
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# When installed under Scripts/bin, walk into the service folder; if copied
+# into service/singlefile/scripts, the parent directory is already the project
+if [[ -d "${SCRIPT_DIR}/../service/singlefile" ]]; then
+    PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../service/singlefile" && pwd)"
+else
+    PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+fi
+VENV_PATH="${PROJECT_ROOT}/.venv"
+
+if [[ ! -d "${VENV_PATH}" ]]; then
+    echo "Error: Virtual environment not found at ${VENV_PATH}"
+    echo "Please run the installation script first"
+    exit 1
+fi
+
+# Execute the CLI application
+exec "${VENV_PATH}/bin/python" -m singlefile_archiver.cli "$@"

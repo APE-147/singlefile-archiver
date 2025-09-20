@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  singlefile:
+    build:
+      context: .
+      dockerfile: Dockerfile.singlefile-python
+    container_name: singlefile-cli
+    volumes:
+      - ".:/data/scripts"
+      - "${SINGLEFILE_INCOMING_DIR:-./data/incoming}:/data/incoming"
+      - "${SINGLEFILE_ARCHIVE_DIR:-./data/archive}:/data/archive"
+      - "./data/logs:/app/logs"
+    environment:
+      - INCOMING_DIR=/data/incoming
+      - ARCHIVE_DIR=/data/archive
+      - CHECK_INTERVAL=2
+      - PYTHONUNBUFFERED=1
+    restart: always
+    healthcheck:
+      test: ["CMD", "python", "-c", "print('healthy')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

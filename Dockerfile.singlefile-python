@@ -1,0 +1,39 @@
+FROM capsulecode/singlefile:latest
+
+# Switch to root to install packages
+USER root
+
+# Install Python and dependencies (assuming Alpine Linux)
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    python3-dev \
+    gcc \
+    musl-dev \
+    bash
+
+# Create symlinks for easier access
+RUN ln -sf /usr/bin/python3 /usr/local/bin/python && \
+    ln -sf /usr/bin/pip3 /usr/local/bin/pip
+
+# Install Python packages needed for CLI
+RUN python3 -m pip install --no-cache-dir --break-system-packages \
+    watchdog \
+    typer \
+    rich \
+    pydantic \
+    docker
+
+# Copy CLI startup script
+COPY container_startup_cli.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/container_startup_cli.sh
+
+# Create necessary directories
+RUN mkdir -p /data/incoming /data/archive /data/scripts /app/logs
+
+# Set environment
+ENV PYTHONPATH="/data/scripts/src"
+ENV PATH="/usr/local/bin:/usr/bin:$PATH"
+
+# Override the default entrypoint to use our monitoring script
+ENTRYPOINT ["/usr/local/bin/container_startup_cli.sh"]

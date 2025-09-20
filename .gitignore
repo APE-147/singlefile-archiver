@@ -1,0 +1,238 @@
+# === CRITICAL PRIVACY DATA PROTECTION ===
+
+# Personal browsing history and URL data
+url_data/
+url_data/*.csv
+Git_Hub.csv
+Twitter.csv
+*_bookmarks.*
+*_history.*
+
+# Personal configuration with file paths
+data/config.json
+config.json
+*config*.json
+
+# Environment files with personal paths
+.env
+.env.*
+!.env.example
+
+# Personal logs and runtime data
+logs/
+*.log
+data/logs/
+singlefile-service*.log
+singlefile_archiver.log
+
+# Archive outputs and downloads
+archives/
+downloads/
+output/
+*.html
+*.mhtml
+*.pdf
+data/archive/
+data/output/
+incoming/
+data/incoming/
+
+# Temporary and cache files
+data/temp/
+temp/
+tmp/
+cache/
+.cache/
+*.tmp
+*.temp
+
+# State files
+state.*
+*.state
+data/state.*
+
+# === AUTHENTICATION & SECURITY ===
+
+# Environment and secrets
+.env
+.env.*
+*.env
+.envrc
+secrets.*
+*.secret
+*.secrets
+
+# Authentication files
+cookies.*
+*.cookies
+auth.*
+*.auth
+credentials.*
+*.credentials
+tokens.*
+*.tokens
+
+# Keys and certificates
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+id_rsa*
+*.ssh
+
+# Docker secrets and volumes
+docker-secrets/
+docker-data/
+.docker/
+
+# === PYTHON DEVELOPMENT ===
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env/
+ENV/
+env.bak/
+venv.bak/
+
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Testing and coverage
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# Environments
+.spyderproject
+.spyproject
+.ropeproject
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# === DOCKER & CONTAINERS ===
+
+# Docker data volumes
+docker-compose.override.yml
+.dockerignore
+
+# === IDE & EDITOR FILES ===
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# === SYSTEM FILES ===
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*

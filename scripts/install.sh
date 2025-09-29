@@ -105,7 +105,13 @@ set -euo pipefail
 
 # Auto-generated wrapper for singlefile-archiver
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "${SCRIPT_DIR}")/service/singlefile"
+if [[ -d "${SCRIPT_DIR}/../service/webpage/singlefile" ]]; then
+    PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../service/webpage/singlefile" && pwd)"
+elif [[ -d "${SCRIPT_DIR}/../service/singlefile" ]]; then
+    PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../service/singlefile" && pwd)"
+else
+    PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+fi
 VENV_PATH="${PROJECT_ROOT}/.venv"
 
 if [[ ! -d "${VENV_PATH}" ]]; then

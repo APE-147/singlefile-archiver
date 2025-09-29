@@ -4,16 +4,18 @@ import csv
 import json
 import re
 import subprocess
+import tempfile
 import time
 import urllib.parse
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import typer
 from rich.console import Console
 from rich.progress import Progress, TaskID
 
+from ..services.cookie_fetcher import CookieProvider
 from ..services.csv_processor import CSVProcessor
 from ..services.docker_service import DockerService
 from ..utils.config import get_config
@@ -318,3 +320,120 @@ def archive_single_url(
     except Exception as e:
         console.print(f"❌ Error: {e}")
         raise typer.Exit(1)
+
+
+@app.command("auto-cookie")
+def archive_with_cookie_update(
+    urls: List[str] = typer.Argument(..., help="One or more URLs to archive"),
+    output_dir: Optional[Path] = typer.Option(None, "--output", "-o", help="Output directory"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be done without executing"),
+) -> None:
+    """Archive URLs using cookie-update data when available."""
+
+    if not urls:
+        console.print("❌ Please provide at least one URL to archive")
+        raise typer.Exit(1)
+
+    config = get_config()
+    docker_service = DockerService()
+    provider = CookieProvider()
+
+    if not docker_service.is_running():
+        console.print("❌ Docker is not running. Please start Docker first.")
+        raise typer.Exit(1)
+
+    output_path = output_dir or Path(config.archive_output_dir)
+    cookie_files: Dict[str, Path] = {}
+    cookie_status: Dict[str, bool] = {}
+    temp_files: List[Path] = []
+
+    def _safe_token(value: str) -> str:
+        sanitized = [ch if ch.isalnum() else "_" for ch in value]
+        token = "".join(sanitized).strip("_")
+        return token or "domain"
+
+    def _write_cookie_file(domain: str, cookies: List[Dict[str, object]]) -> Path:
+        safe = _safe_token(domain)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=".cookies.json",
+            prefix=f"singlefile_{safe}_",
+            delete=False,
+            encoding="utf-8",
+        ) as handle:
+            json.dump(cookies, handle, ensure_ascii=False, indent=2)
+            temp_path = Path(handle.name)
+        temp_files.append(temp_path)
+        return temp_path
+
+    try:
+        if dry_run:
+            console.print("🔍 Dry run - cookie-update lookup:")
+            for url in urls:
+                domain = CookieProvider.normalize_domain(url) or url
+                bundle = provider.get_bundle(url)
+                if bundle and bundle.singlefile:
+                    console.print(
+                        f"  {url} -> {domain}: {len(bundle.singlefile)} cookies available"
+                    )
+                else:
+                    console.print(f"  {url} -> {domain}: no cookies from cookie-update")
+            return
+
+        successes = 0
+        failures: List[Tuple[str, str]] = []
+
+        for url in urls:
+            domain = CookieProvider.normalize_domain(url) or url
+            singlefile_cookies = provider.get_singlefile_cookies(url)
+            cookies_path: Optional[Path] = None
+
+            if singlefile_cookies:
+                cookies_path = cookie_files.get(domain)
+                if not cookies_path:
+                    cookies_path = _write_cookie_file(domain, singlefile_cookies)
+                    cookie_files[domain] = cookies_path
+                    console.print(
+                        f"🔐 cookie-update: using {len(singlefile_cookies)} cookies for {domain}"
+                    )
+                elif domain not in cookie_status:
+                    console.print(f"🔐 cookie-update: reusing cached cookies for {domain}")
+                cookie_status[domain] = True
+            else:
+                if domain not in cookie_status:
+                    console.print(f"ℹ️ cookie-update: no cookies available for {domain}")
+                    cookie_status[domain] = False
+
+            console.print(f"🔄 Archiving: {url}")
+            try:
+                result = docker_service.archive_url(url, output_path, cookies_file=cookies_path)
+            except Exception as exc:
+                logger.error("Error archiving %s: %s", url, exc)
+                failures.append((url, str(exc)))
+                console.print(f"  ❌ Error: {exc}")
+                continue
+
+            if result.success:
+                successes += 1
+                destination = result.output_file or output_path
+                console.print(f"  ✅ Archived to: {destination}")
+            else:
+                reason = result.error or "unknown error"
+                failures.append((url, reason))
+                console.print(f"  ❌ Failed: {reason}")
+
+        console.print("\n📈 Summary:")
+        console.print(f"  ✅ Successful: {successes}")
+        console.print(f"  ❌ Failed: {len(failures)}")
+        if failures:
+            console.print("  ⚠️  Failed URLs:")
+            for failed_url, reason in failures:
+                console.print(f"    - {failed_url}: {reason}")
+            raise typer.Exit(1)
+
+    finally:
+        for path in temp_files:
+            try:
+                path.unlink(missing_ok=True)
+            except Exception:
+                logger.debug("Failed to remove temp cookie file: %s", path)

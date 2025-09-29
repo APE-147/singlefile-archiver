@@ -11,7 +11,8 @@ Twitter.csv
 # Personal configuration with file paths
 data/config.json
 config.json
-*config*.json
+config.local.json
+config.local.*.json
 
 # Environment files with personal paths
 .env

@@ -40,9 +40,9 @@ The system automatically creates and manages these directories. Default paths ca
 
 ```json
 {
-  "monitor_watch_dir": "/Users/niceday/Developer/Cloud/Dropbox/-File-/Mac-Download",
-  "monitor_archive_dir": "/Users/niceday/Developer/Cloud/Dropbox/-File-/Archive/Web", 
-  "archive_output_dir": "/Users/niceday/Developer/Cloud/Dropbox/-File-/Archive/Web"
+  "monitor_watch_dir": "${SINGLEFILE_INCOMING_DIR:-/path/to/incoming}",
+  "monitor_archive_dir": "${SINGLEFILE_ARCHIVE_DIR:-/path/to/archive}",
+  "archive_output_dir": "${SINGLEFILE_ARCHIVE_DIR:-/path/to/archive}"
 }
 ```
 

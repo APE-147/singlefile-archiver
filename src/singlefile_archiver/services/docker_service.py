@@ -6,7 +6,7 @@ from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote
 
 import docker
 from docker.errors import DockerException
@@ -203,7 +203,17 @@ class DockerService:
                 fallback = f"{fallback}?{parsed_url.query}"
             title = fallback or "archived_page"
 
-        base = f"({title})"
+        # Encode URL for safe inclusion in filename (avoid / : ? * etc.)
+        def _encode_url_for_filename(raw: str, max_len: int = 180) -> str:
+            encoded = quote(raw, safe="")
+            if len(encoded) > max_len:
+                return encoded[: max_len - 1] + "…"
+            return encoded
+
+        url_part = _encode_url_for_filename(url)
+
+        # Fixed format: (<title>) [URL] <encoded_url>
+        base = f"({title}) [URL] {url_part}"
         sanitized = safe_filename(base)
         if not sanitized.endswith('.html'):
             sanitized += '.html'

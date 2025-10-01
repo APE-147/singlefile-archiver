@@ -54,6 +54,13 @@ def check_duplicate_url(url: str, archive_dir: Path) -> bool:
 
 def get_page_title_filename(url: str, container_name: str) -> str:
     """Get page title and create filename, fallback to URL-based name if needed"""
+    def _encode_url_for_filename(raw: str, max_len: int = 180) -> str:
+        encoded = urllib.parse.quote(raw, safe="")
+        if len(encoded) > max_len:
+            return encoded[: max_len - 1] + "…"
+        return encoded
+
+    url_part = _encode_url_for_filename(url)
     try:
         # Use SingleFile to get page info without saving
         cmd = [
@@ -76,7 +83,8 @@ def get_page_title_filename(url: str, container_name: str) -> str:
                     clean_title = re.sub(r'[<>:"/\\|?*]', '_', title)
                     clean_title = clean_title[:50]  # Limit length
                     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                    return f"{clean_title}_{timestamp}.html"
+                    # Fixed format suffix with encoded URL
+                    return f"{clean_title}_{timestamp} [URL] {url_part}.html"
                     
             except json.JSONDecodeError:
                 pass
@@ -88,7 +96,7 @@ def get_page_title_filename(url: str, container_name: str) -> str:
     parsed_url = urllib.parse.urlparse(url)
     domain = parsed_url.netloc.replace('www.', '')
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    return f"{domain}_{timestamp}.html"
+    return f"{domain}_{timestamp} [URL] {url_part}.html"
 
 
 def archive_single_url(url: str, container_name: str, output_dir: str) -> bool:

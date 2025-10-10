@@ -1,6 +1,5 @@
 """File monitoring functionality."""
 
-import time
 from pathlib import Path
 from typing import Optional
 
@@ -25,29 +24,29 @@ def start_monitoring(
 ) -> None:
     """Start monitoring a directory for HTML files."""
     config = get_config()
-    
+
     watch_path = watch_dir or Path(config.monitor_watch_dir)
     archive_path = archive_dir or Path(config.monitor_archive_dir)
-    
+
     if not watch_path.exists():
         console.print(f"❌ Watch directory does not exist: {watch_path}")
         raise typer.Exit(1)
-    
+
     archive_path.mkdir(parents=True, exist_ok=True)
-    
-    console.print(f"👀 Starting file monitor...")
+
+    console.print("👀 Starting file monitor...")
     console.print(f"   Watch directory: {watch_path}")
     console.print(f"   Archive directory: {archive_path}")
     console.print(f"   Pattern: {pattern}")
     console.print(f"   Check interval: {interval}s")
     console.print("Press Ctrl+C to stop")
-    
+
     monitor = FileMonitor(
         watch_dir=watch_path,
         archive_dir=archive_path,
         check_interval=interval
     )
-    
+
     try:
         monitor.start_monitoring(use_watchdog=True)
     except KeyboardInterrupt:
@@ -66,22 +65,22 @@ def monitor_once(
 ) -> None:
     """Run monitoring once and exit."""
     config = get_config()
-    
+
     watch_path = watch_dir or Path(config.monitor_watch_dir)
     archive_path = archive_dir or Path(config.monitor_archive_dir)
-    
+
     if not watch_path.exists():
         console.print(f"❌ Watch directory does not exist: {watch_path}")
         raise typer.Exit(1)
-    
+
     archive_path.mkdir(parents=True, exist_ok=True)
-    
+
     monitor = FileMonitor(
         watch_dir=watch_path,
         archive_dir=archive_path,
         check_interval=interval
     )
-    
+
     try:
         moved_count = monitor.process_files()
         if moved_count > 0:
@@ -98,28 +97,28 @@ def monitor_once(
 def monitor_status() -> None:
     """Show monitoring configuration and status."""
     config = get_config()
-    
+
     from rich.table import Table
-    
+
     table = Table(title="File Monitor Status")
     table.add_column("Setting", style="cyan")
     table.add_column("Value", style="green")
     table.add_column("Status", style="yellow")
-    
+
     watch_dir = Path(config.monitor_watch_dir)
     archive_dir = Path(config.monitor_archive_dir)
-    
+
     table.add_row(
-        "Watch Directory", 
-        str(watch_dir), 
+        "Watch Directory",
+        str(watch_dir),
         "✅ Exists" if watch_dir.exists() else "❌ Missing"
     )
     table.add_row(
-        "Archive Directory", 
-        str(archive_dir), 
+        "Archive Directory",
+        str(archive_dir),
         "✅ Exists" if archive_dir.exists() else "📁 Will be created"
     )
-    
+
     console.print(table)
 
 
@@ -132,54 +131,54 @@ def scan_existing_files(
     config = get_config()
     directory = directory or Path(config.monitor_watch_dir)
     archive_dir = Path(config.monitor_archive_dir)
-    
+
     if not directory.exists():
         console.print(f"❌ Directory does not exist: {directory}")
         raise typer.Exit(1)
-    
+
     file_monitor = FileMonitor(directory, archive_dir)
-    
+
     console.print(f"🔍 Scanning {directory} for matching HTML files...")
-    
+
     matching_files = []
     for file_path in directory.glob("*.html"):
         if file_monitor.should_move_file(file_path):
             matching_files.append(file_path)
-    
+
     if not matching_files:
         console.print("📦 No matching files found")
         return
-    
+
     console.print(f"Found {len(matching_files)} matching files:")
-    
+
     from rich.table import Table
     table = Table()
     table.add_column("File", style="cyan")
     table.add_column("Pattern", style="green")
     table.add_column("Size", style="yellow")
-    
+
     for file_path in sorted(matching_files):
         filename = file_path.name
-        
+
         # Determine which pattern matched
         if "X 上的" in filename:
             pattern = "Contains 'X 上的'"
         else:
             pattern = "Timestamp pattern"
-        
+
         size = f"{file_path.stat().st_size:,} bytes"
         table.add_row(filename[:80] + "..." if len(filename) > 80 else filename, pattern, size)
-    
+
     console.print(table)
-    
+
     if move:
         console.print(f"\n📦 Moving {len(matching_files)} files to archive...")
         moved_count = 0
-        
+
         for file_path in matching_files:
             if file_monitor.move_file_to_archive(file_path):
                 moved_count += 1
-        
+
         console.print(f"✅ Successfully moved {moved_count} files to archive")
     else:
         console.print("\n💡 Use --move to actually move these files to archive")

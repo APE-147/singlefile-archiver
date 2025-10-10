@@ -13,7 +13,7 @@ from .paths import get_project_dir
 def _get_default_data_dir() -> str:
     """Get default data directory from environment or fallback to user directory."""
     return os.getenv(
-        "SINGLEFILE_DATA_DIR", 
+        "SINGLEFILE_DATA_DIR",
         str(Path.home() / ".local" / "share" / "singlefile")
     )
 
@@ -36,22 +36,22 @@ def _get_default_incoming_dir() -> str:
 
 class Config(BaseModel):
     """Application configuration model."""
-    
+
     # Project paths
     project_dir: str = Field(default_factory=lambda: str(get_project_dir()))
-    
+
     # Archive settings
     archive_output_dir: str = Field(default_factory=_get_default_archive_dir)
     archive_batch_size: int = Field(default=10)
     max_retries: int = Field(default=10)
     retry_delay: int = Field(default=2)
-    
+
     # Monitor settings
     monitor_watch_dir: str = Field(default_factory=_get_default_incoming_dir)
     monitor_archive_dir: str = Field(default_factory=_get_default_archive_dir)
     monitor_pattern: str = Field(default="*.html")
     monitor_interval: int = Field(default=2)
-    
+
     # Docker settings
     docker_image: str = Field(default="capsulecode/singlefile")
     docker_container: str = Field(default="singlefile-cli")
@@ -59,11 +59,11 @@ class Config(BaseModel):
     docker_timeout: int = Field(default=300)
     docker_cookies_file: Optional[str] = Field(default=None)
     docker_cookies_mount_path: str = Field(default="/tmp/singlefile-cookies.json")
-    
+
     # Retry settings
     max_retry_attempts: int = Field(default=10)
     retry_delay: int = Field(default=2)
-    
+
     # Logging
     log_level: str = Field(default="INFO")
     log_to_file: bool = Field(default=True)
@@ -141,7 +141,7 @@ def load_config(config_file: Optional[Path] = None) -> Config:
 
     if config_file.exists():
         try:
-            with open(config_file, 'r') as f:
+            with open(config_file) as f:
                 config_data = json.load(f)
             return _apply_env_overrides(Config(**config_data))
         except (json.JSONDecodeError, Exception):
@@ -159,10 +159,10 @@ def save_config(config: Config, config_file: Optional[Path] = None) -> None:
     if config_file is None:
         project_dir = get_project_dir()
         config_file = project_dir / "config.json"
-    
+
     # Ensure parent directory exists
     config_file.parent.mkdir(parents=True, exist_ok=True)
-    
+
     with open(config_file, 'w') as f:
         json.dump(config.model_dump(), f, indent=2)
 
@@ -175,12 +175,12 @@ def get_config() -> Config:
 def update_config(updates: Dict[str, Any]) -> Config:
     """Update configuration with new values."""
     config = get_config()
-    
+
     # Update fields
     for key, value in updates.items():
         if hasattr(config, key):
             setattr(config, key, value)
-    
+
     # Save updated config
     save_config(config)
     return config

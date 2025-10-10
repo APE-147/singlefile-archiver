@@ -3,19 +3,19 @@
 import os
 import re
 import subprocess
-from datetime import datetime
 from dataclasses import dataclass
+from datetime import datetime
+from html import unescape
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urlparse, quote
+from urllib.parse import quote, urlparse
 
 import docker
 from docker.errors import DockerException
-from html import unescape
 
 from ..utils.config import get_config
 from ..utils.logging import get_logger
-from ..utils.paths import safe_filename, build_canonical_basename, optimize_filename
+from ..utils.paths import build_canonical_basename, optimize_filename, safe_filename
 
 logger = get_logger(__name__)
 
@@ -31,12 +31,12 @@ class ArchiveResult:
 
 class DockerService:
     """Service for managing Docker operations."""
-    
+
     def __init__(self):
         """Initialize Docker service."""
         self.config = get_config()
         self._client: Optional[docker.DockerClient] = None
-    
+
     @property
     def client(self) -> docker.DockerClient:
         """Get Docker client, creating if necessary."""
@@ -47,7 +47,7 @@ class DockerService:
                 logger.error(f"Failed to create Docker client: {e}")
                 raise
         return self._client
-    
+
     def is_running(self) -> bool:
         """Check if Docker daemon is running."""
         try:
@@ -55,7 +55,7 @@ class DockerService:
             return True
         except DockerException:
             return False
-    
+
     def pull_image(self) -> ArchiveResult:
         """Pull the SingleFile Docker image."""
         try:
@@ -69,7 +69,7 @@ class DockerService:
             error_msg = f"Failed to pull image: {e}"
             logger.error(error_msg)
             return ArchiveResult(success=False, error=error_msg)
-    
+
     def get_container_status(self) -> Optional[dict]:
         """Get status of SingleFile container/image."""
         try:
@@ -83,7 +83,7 @@ class DockerService:
             return None
         except DockerException:
             return None
-    
+
     def archive_url(
         self,
         url: str,
@@ -94,7 +94,7 @@ class DockerService:
         try:
             # Ensure output directory exists
             output_dir.mkdir(parents=True, exist_ok=True)
-            
+
             # Resolve cookies file if provided via argument or configuration
             container_cookies_path = self.config.docker_cookies_mount_path
             resolved_cookies: Optional[Path] = None
@@ -129,9 +129,9 @@ class DockerService:
                 ])
 
             docker_cmd.append(url)
-            
+
             logger.info(f"Running Docker command: {' '.join(docker_cmd)}")
-            
+
             # Run container
             result = subprocess.run(
                 docker_cmd,
@@ -139,7 +139,7 @@ class DockerService:
                 text=True,
                 timeout=self.config.docker_timeout
             )
-            
+
             if result.returncode == 0:
                 output_file: Optional[Path] = None
 
@@ -175,12 +175,12 @@ class DockerService:
                 error_msg = f"Docker command failed: {result.stderr}"
                 logger.error(error_msg)
                 return ArchiveResult(success=False, error=error_msg)
-        
+
         except subprocess.TimeoutExpired:
             error_msg = f"Archive operation timed out after {self.config.docker_timeout}s"
             logger.error(error_msg)
             return ArchiveResult(success=False, error=error_msg)
-        
+
         except Exception as e:
             error_msg = f"Archive operation failed: {e}"
             logger.error(error_msg)
@@ -206,7 +206,7 @@ class DockerService:
 
         # Check feature flags for filename optimization
         use_optimization = os.getenv('FF_FILENAME_OPTIMIZATION', 'false').lower() == 'true'
-        
+
         if use_optimization:
             # Use new optimized filename generation
             base = build_canonical_basename(title, url, max_title_length=100)
@@ -228,7 +228,7 @@ class DockerService:
         candidate = output_dir / sanitized
         if candidate.exists():
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            
+
             if use_optimization:
                 # For optimized filenames, add timestamp to the title portion
                 optimized_title = optimize_filename(f"{title} {timestamp}", max_length=100)
@@ -236,14 +236,14 @@ class DockerService:
             else:
                 # Legacy approach
                 base_with_timestamp = f"{base}_{timestamp}"
-                
+
             sanitized = safe_filename(base_with_timestamp)
             if not sanitized.endswith('.html'):
                 sanitized += '.html'
             candidate = output_dir / sanitized
 
         return candidate
-    
+
     def test_connection(self) -> ArchiveResult:
         """Test Docker connection with a simple container."""
         try:
@@ -254,7 +254,7 @@ class DockerService:
                 text=True,
                 timeout=30
             )
-            
+
             if result.returncode == 0:
                 return ArchiveResult(
                     success=True,
@@ -263,7 +263,7 @@ class DockerService:
             else:
                 error_msg = f"Docker test failed: {result.stderr}"
                 return ArchiveResult(success=False, error=error_msg)
-        
+
         except subprocess.TimeoutExpired:
             return ArchiveResult(
                 success=False,

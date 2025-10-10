@@ -4,7 +4,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 import typer
 from rich.console import Console
@@ -12,7 +12,7 @@ from rich.prompt import Confirm
 from rich.table import Table
 
 from ..utils.logging import get_logger
-from ..utils.paths import optimize_filename, remove_emoji, safe_filename
+from ..utils.paths import optimize_filename, safe_filename
 
 logger = get_logger(__name__)
 console = Console()
@@ -40,12 +40,12 @@ def extract_title_from_filename(filename: str) -> str:
     """
     # Remove extension
     base_name = filename.replace('.html', '').replace('.htm', '')
-    
+
     # Try to extract title from pattern: (title) [URL] encoded_url
     title_match = re.match(r'^\(([^)]+)\)', base_name)
     if title_match:
         return title_match.group(1)
-    
+
     # Try to extract from other common patterns
     # Pattern: title - URL or title_URL
     for separator in [' - ', '_', ' ']:
@@ -53,7 +53,7 @@ def extract_title_from_filename(filename: str) -> str:
             parts = base_name.split(separator)
             if len(parts) >= 2:
                 return parts[0].strip()
-    
+
     # Fallback: use the whole base name
     return base_name
 
@@ -69,16 +69,16 @@ def generate_optimized_filename(original_path: Path) -> str:
     """
     original_name = original_path.stem
     extension = original_path.suffix
-    
+
     # Extract title from the filename
     title = extract_title_from_filename(original_name)
-    
+
     # Optimize the title
     optimized_title = optimize_filename(title, max_length=120)
-    
+
     # Create the new filename
     new_name = safe_filename(optimized_title) + extension
-    
+
     return new_name
 
 
@@ -95,12 +95,12 @@ def scan_archive_directory(directory: Path, pattern: str = "*.html") -> List[Pat
     if not directory.exists():
         logger.warning(f"Directory does not exist: {directory}")
         return []
-    
+
     files = []
     try:
         files = list(directory.glob(pattern))
         files.extend(directory.glob("*.htm"))  # Also include .htm files
-        
+
         # Filter out already optimized files (basic heuristic)
         filtered_files = []
         for file_path in files:
@@ -112,9 +112,9 @@ def scan_archive_directory(directory: Path, pattern: str = "*.html") -> List[Pat
                     # This file might already be optimized, but include it anyway for user decision
                     pass
             filtered_files.append(file_path)
-            
+
         return filtered_files
-        
+
     except Exception as e:
         logger.error(f"Error scanning directory {directory}: {e}")
         return []
@@ -131,16 +131,16 @@ def generate_rename_operations(files: List[Path]) -> List[RenameOperation]:
     """
     operations = []
     used_names = set()
-    
+
     for file_path in files:
         try:
             new_name = generate_optimized_filename(file_path)
             new_path = file_path.parent / new_name
-            
+
             # Check for conflicts
             conflict = False
             reason = ""
-            
+
             if new_path.exists() and new_path != file_path:
                 conflict = True
                 reason = "Target file already exists"
@@ -149,7 +149,7 @@ def generate_rename_operations(files: List[Path]) -> List[RenameOperation]:
                 reason = "Duplicate name generated"
             else:
                 used_names.add(new_name.lower())
-            
+
             operation = RenameOperation(
                 old_path=file_path,
                 new_path=new_path,
@@ -158,13 +158,13 @@ def generate_rename_operations(files: List[Path]) -> List[RenameOperation]:
                 conflict=conflict,
                 reason=reason
             )
-            
+
             operations.append(operation)
-            
+
         except Exception as e:
             logger.error(f"Error processing file {file_path}: {e}")
             continue
-    
+
     return operations
 
 
@@ -177,16 +177,16 @@ def preview_operations(operations: List[RenameOperation]) -> None:
     if not operations:
         console.print("[yellow]No files found to optimize.[/yellow]")
         return
-    
+
     table = Table(title="Filename Optimization Preview")
     table.add_column("Current Name", style="cyan", max_width=40)
     table.add_column("New Name", style="green", max_width=40)
     table.add_column("Status", style="bold")
     table.add_column("Notes", style="dim")
-    
+
     changes_count = 0
     conflicts_count = 0
-    
+
     for op in operations:
         if op.old_name == op.new_name:
             status = "[dim]No change[/dim]"
@@ -199,9 +199,9 @@ def preview_operations(operations: List[RenameOperation]) -> None:
             status = "[green]Will rename[/green]"
             notes = "✓"
             changes_count += 1
-        
+
         table.add_row(op.old_name, op.new_name, status, notes)
-    
+
     console.print(table)
     console.print(f"\n[bold]Summary:[/bold] {changes_count} files to rename, {conflicts_count} conflicts")
 
@@ -218,28 +218,28 @@ def apply_operations(operations: List[RenameOperation], force: bool = False) -> 
     """
     successful = 0
     failed = 0
-    
+
     for op in operations:
         if op.old_name == op.new_name:
             continue  # Skip files that don't need renaming
-            
+
         if op.conflict and not force:
             console.print(f"[yellow]Skipping {op.old_name}: {op.reason}[/yellow]")
             failed += 1
             continue
-        
+
         try:
             # Perform the rename
             op.old_path.rename(op.new_path)
             console.print(f"[green]✓[/green] Renamed: {op.old_name} → {op.new_name}")
             successful += 1
             logger.info(f"Renamed file: {op.old_path} → {op.new_path}")
-            
+
         except Exception as e:
             console.print(f"[red]✗[/red] Failed to rename {op.old_name}: {e}")
             logger.error(f"Failed to rename {op.old_path}: {e}")
             failed += 1
-    
+
     return successful, failed
 
 
@@ -261,53 +261,53 @@ def optimize_filenames_command(
     if not os.getenv('FF_BATCH_PROCESSING', 'false').lower() == 'true':
         console.print("[red]Batch processing is disabled. Set FF_BATCH_PROCESSING=true to enable.[/red]")
         raise typer.Exit(1)
-    
+
     dir_path = Path(directory)
     if not dir_path.exists():
         console.print(f"[red]Directory does not exist: {directory}[/red]")
         raise typer.Exit(1)
-    
+
     if not dir_path.is_dir():
         console.print(f"[red]Path is not a directory: {directory}[/red]")
         raise typer.Exit(1)
-    
+
     console.print(f"[bold]Scanning directory:[/bold] {dir_path}")
-    
+
     # Scan for files
     files = scan_archive_directory(dir_path, pattern)
     console.print(f"Found {len(files)} files matching pattern '{pattern}'")
-    
+
     if not files:
         console.print("[yellow]No files found to process.[/yellow]")
         return
-    
+
     # Generate rename operations
     operations = generate_rename_operations(files)
-    
+
     # Preview operations
     preview_operations(operations)
-    
+
     if dry_run:
         console.print("\n[bold blue]Dry run complete. No files were modified.[/bold blue]")
         return
-    
+
     # Apply operations
     operations_to_apply = [op for op in operations if not op.conflict or force]
-    
+
     if not operations_to_apply:
         console.print("\n[yellow]No operations to apply.[/yellow]")
         return
-    
+
     if not force and not interactive:
         if not Confirm.ask(f"\nProceed with renaming {len(operations_to_apply)} files?"):
             console.print("Operation cancelled.")
             return
-    
+
     console.print("\n[bold]Applying filename optimizations...[/bold]")
     successful, failed = apply_operations(operations_to_apply, force=force)
-    
+
     console.print(f"\n[bold]Results:[/bold] {successful} successful, {failed} failed")
-    
+
     if failed > 0:
         console.print("[yellow]Some operations failed. Check the logs for details.[/yellow]")
 

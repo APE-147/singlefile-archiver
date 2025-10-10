@@ -3,7 +3,7 @@
 import re
 import unicodedata
 from pathlib import Path
-from typing import Union, List
+from typing import Union
 from urllib.parse import quote
 
 
@@ -26,11 +26,11 @@ def get_project_dir(project_name: str = "singlefile-archiver") -> Path:
     else:
         # Fallback to current file's directory structure
         current_dir = Path(__file__).parent.parent.parent.parent
-    
+
     # Create data directory in project root
     project_dir = current_dir / "data"
     project_dir.mkdir(parents=True, exist_ok=True)
-    
+
     return project_dir
 
 
@@ -66,7 +66,7 @@ def remove_emoji(text: str) -> str:
     """
     if not text:
         return text
-        
+
     # Define emoji ranges more comprehensively
     emoji_ranges = [
         # Main emoji blocks
@@ -86,7 +86,7 @@ def remove_emoji(text: str) -> str:
         ('\U0001F000', '\U0001F02F'),  # Mahjong Tiles
         ('\U0001F0A0', '\U0001F0FF'),  # Playing Cards
     ]
-    
+
     result = []
     for char in text:
         # Check if character is in any emoji range
@@ -95,11 +95,11 @@ def remove_emoji(text: str) -> str:
             if start <= char <= end:
                 is_emoji = True
                 break
-        
+
         # Skip emoji characters
         if is_emoji:
             continue
-            
+
         # Check Unicode categories for symbols that might be emoji
         category = unicodedata.category(char)
         if category in ('So', 'Sk'):
@@ -110,14 +110,14 @@ def remove_emoji(text: str) -> str:
                 'balloon', 'party', 'celebration', 'thermometer', 'bug'
             ]):
                 continue
-        
+
         # Preserve most characters including useful symbols like °
         result.append(char)
-    
+
     # Clean up extra whitespace
     clean_text = ''.join(result)
     clean_text = re.sub(r'\s+', ' ', clean_text).strip()
-    
+
     return clean_text
 
 
@@ -133,31 +133,31 @@ def optimize_filename(title: str, max_length: int = 120) -> str:
     """
     if not title:
         return "untitled"
-    
+
     # Remove emoji and problematic characters
     clean_title = remove_emoji(title)
-    
+
     # If title is empty after emoji removal, use a fallback
     if not clean_title.strip():
         return "untitled"
-    
+
     # Normalize whitespace and basic cleanup
     clean_title = re.sub(r'\s+', ' ', clean_title).strip()
-    
+
     # If still within length limit, return as-is
     if len(clean_title) <= max_length:
         return clean_title
-    
+
     # Intelligent truncation at word boundary
     if max_length <= 3:
         return clean_title[:max_length]
-    
+
     # Try to break at a word boundary
     truncate_pos = max_length - 3  # Reserve space for "..."
-    
+
     # Find the last space before the truncation point
     last_space = clean_title.rfind(' ', 0, truncate_pos)
-    
+
     if last_space > max_length // 2:  # Only use word boundary if it's reasonable
         return clean_title[:last_space] + "..."
     else:
@@ -176,11 +176,11 @@ def encode_url_for_filename(url: str, max_length: int = 180) -> str:
     """
     if not url:
         return "no-url"
-        
+
     encoded = quote(url, safe="")
     if len(encoded) <= max_length:
         return encoded
-        
+
     # Truncate with ellipsis
     return encoded[:max_length - 3] + "..."
 
@@ -198,13 +198,13 @@ def build_canonical_basename(title: str, url: str, max_title_length: int = 120) 
     """
     # Optimize the title (removes emoji and controls length)
     optimized_title = optimize_filename(title, max_title_length)
-    
+
     # Encode URL for filename
     url_part = encode_url_for_filename(url, 60)  # Shorter URL part to save space
-    
+
     # Build the canonical format: (title) [URL] encoded_url
     basename = f"({optimized_title}) [URL] {url_part}"
-    
+
     return basename
 
 
@@ -220,20 +220,20 @@ def safe_filename(filename: str, max_length: int = 255) -> str:
     """
     if not filename:
         return "untitled"
-        
+
     # Remove/replace unsafe characters
     safe_name = re.sub(r'[<>:"/\\|?*]', '_', filename)
     safe_name = re.sub(r'\s+', '_', safe_name)
-    
+
     # Limit length
     if len(safe_name) > max_length:
         # Calculate stable hash for uniqueness
         hash_suffix = f"_{abs(hash(filename)) % 10000:04d}"
         max_base_length = max_length - len(hash_suffix)
-        
+
         if max_base_length > 0:
             safe_name = safe_name[:max_base_length] + hash_suffix
         else:
             safe_name = f"file_{abs(hash(filename)) % 10000:04d}"
-    
+
     return safe_name

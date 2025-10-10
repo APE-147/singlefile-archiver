@@ -1,5 +1,6 @@
 """Docker service for SingleFile container management."""
 
+import os
 import re
 import subprocess
 from datetime import datetime
@@ -14,7 +15,7 @@ from html import unescape
 
 from ..utils.config import get_config
 from ..utils.logging import get_logger
-from ..utils.paths import safe_filename
+from ..utils.paths import safe_filename, build_canonical_basename, optimize_filename
 
 logger = get_logger(__name__)
 
@@ -203,17 +204,23 @@ class DockerService:
                 fallback = f"{fallback}?{parsed_url.query}"
             title = fallback or "archived_page"
 
-        # Encode URL for safe inclusion in filename (avoid / : ? * etc.)
-        def _encode_url_for_filename(raw: str, max_len: int = 180) -> str:
-            encoded = quote(raw, safe="")
-            if len(encoded) > max_len:
-                return encoded[: max_len - 1] + "…"
-            return encoded
+        # Check feature flags for filename optimization
+        use_optimization = os.getenv('FF_FILENAME_OPTIMIZATION', 'false').lower() == 'true'
+        
+        if use_optimization:
+            # Use new optimized filename generation
+            base = build_canonical_basename(title, url, max_title_length=100)
+        else:
+            # Legacy filename generation (backward compatibility)
+            def _encode_url_for_filename(raw: str, max_len: int = 180) -> str:
+                encoded = quote(raw, safe="")
+                if len(encoded) > max_len:
+                    return encoded[: max_len - 1] + "…"
+                return encoded
 
-        url_part = _encode_url_for_filename(url)
+            url_part = _encode_url_for_filename(url)
+            base = f"({title}) [URL] {url_part}"
 
-        # Fixed format: (<title>) [URL] <encoded_url>
-        base = f"({title}) [URL] {url_part}"
         sanitized = safe_filename(base)
         if not sanitized.endswith('.html'):
             sanitized += '.html'
@@ -221,7 +228,16 @@ class DockerService:
         candidate = output_dir / sanitized
         if candidate.exists():
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            sanitized = safe_filename(f"{base}_{timestamp}")
+            
+            if use_optimization:
+                # For optimized filenames, add timestamp to the title portion
+                optimized_title = optimize_filename(f"{title} {timestamp}", max_length=100)
+                base_with_timestamp = build_canonical_basename(optimized_title, url, max_title_length=100)
+            else:
+                # Legacy approach
+                base_with_timestamp = f"{base}_{timestamp}"
+                
+            sanitized = safe_filename(base_with_timestamp)
             if not sanitized.endswith('.html'):
                 sanitized += '.html'
             candidate = output_dir / sanitized

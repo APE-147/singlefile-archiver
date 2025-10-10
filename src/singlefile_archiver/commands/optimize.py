@@ -141,16 +141,26 @@ def generate_rename_operations(files: List[Path]) -> List[RenameOperation]:
     else:
         existing_files = set()
 
+    # **IMPROVED: Pre-process all titles to identify similar patterns for better deduplication**
+    # Extract and clean titles first for proper pattern analysis
+    raw_titles = [extract_title_from_filename(f.stem) for f in files]
+    from ..utils.paths import remove_emoji
+    clean_titles = [remove_emoji(title) for title in raw_titles]
+    title_analysis = _analyze_title_patterns(clean_titles)
+
     # First pass: generate all potential names with proper deduplication
-    for file_path in files:
+    for i, file_path in enumerate(files):
         try:
             # Extract title from filename
             original_name = file_path.stem
             extension = file_path.suffix
             title = extract_title_from_filename(original_name)
             
+            # **IMPROVED: Use pattern analysis for better length allocation**
+            optimal_length = _calculate_optimal_length(title, title_analysis, base_length=120)
+            
             # Optimize the title with deduplication based on already processed titles
-            optimized_title = optimize_filename(title, max_length=120, existing_names=used_optimized_titles)
+            optimized_title = optimize_filename(title, max_length=optimal_length, existing_names=used_optimized_titles)
             
             # Track this optimized title
             used_optimized_titles.add(optimized_title.lower())
@@ -189,6 +199,123 @@ def generate_rename_operations(files: List[Path]) -> List[RenameOperation]:
             continue
 
     return operations
+
+
+def _analyze_title_patterns(titles: List[str]) -> dict:
+    """Analyze title patterns to identify common prefixes and optimize length allocation.
+    
+    Args:
+        titles: List of titles to analyze
+        
+    Returns:
+        Dictionary containing pattern analysis results
+    """
+    if not titles:
+        return {}
+    
+    # Find common prefixes and patterns
+    common_prefixes = {}
+    pattern_groups = {}
+    
+    # Group titles by similar prefixes (first 2-4 words) with more granularity
+    for title in titles:
+        words = title.split()
+        if len(words) >= 2:
+            # Check different prefix lengths
+            for prefix_len in range(2, min(len(words) + 1, 5)):  # 2-4 words
+                prefix = ' '.join(words[:prefix_len])
+                if prefix not in common_prefixes:
+                    common_prefixes[prefix] = []
+                common_prefixes[prefix].append(title)
+    
+    # Also check for structural patterns (e.g., "Complete [LANGUAGE] Programming")
+    for title in titles:
+        words = title.split()
+        if len(words) >= 3:
+            # Pattern: Complete X Programming
+            if words[0].lower() == 'complete' and len(words) >= 3:
+                if 'programming' in [w.lower() for w in words]:
+                    pattern_key = 'Complete * Programming'
+                    if pattern_key not in pattern_groups:
+                        pattern_groups[pattern_key] = []
+                    pattern_groups[pattern_key].append(title)
+            
+            # Pattern: X News: Y
+            if len(words) >= 2 and words[1].lower() in ['news:', 'news']:
+                pattern_key = '* News: *'
+                if pattern_key not in pattern_groups:
+                    pattern_groups[pattern_key] = []
+                pattern_groups[pattern_key].append(title)
+                
+            # Pattern: Understanding X: Y
+            if words[0].lower() == 'understanding' and len(words) >= 3:
+                pattern_key = 'Understanding *: *'
+                if pattern_key not in pattern_groups:
+                    pattern_groups[pattern_key] = []
+                pattern_groups[pattern_key].append(title)
+    
+    # Combine prefix groups and pattern groups
+    similar_groups = {}
+    
+    # Add significant prefix groups (2+ titles with same prefix)
+    for prefix, group_titles in common_prefixes.items():
+        if len(group_titles) >= 2 and len(prefix.split()) >= 2:
+            similar_groups[prefix] = group_titles
+    
+    # Add pattern groups (2+ titles with same structural pattern) 
+    for pattern, group_titles in pattern_groups.items():
+        if len(group_titles) >= 2:
+            similar_groups[pattern] = group_titles
+    
+    # Find the most significant overlaps - prefer longer/more specific matches
+    significant_groups = {}
+    for prefix, group_titles in similar_groups.items():
+        if len(group_titles) >= 2:
+            # Filter out very generic patterns unless they're structural patterns
+            prefix_words = prefix.split()
+            is_structural_pattern = '*' in prefix
+            is_meaningful_prefix = len(prefix_words) >= 2 and not all(w.lower() in ['the', 'a', 'an'] for w in prefix_words[:2])
+            
+            if is_structural_pattern or is_meaningful_prefix:
+                significant_groups[prefix] = group_titles
+    
+    return {
+        'total_titles': len(titles),
+        'common_prefixes': common_prefixes,
+        'pattern_groups': pattern_groups,
+        'similar_groups': significant_groups,
+        'needs_aggressive_dedup': len(significant_groups) > 0
+    }
+
+
+def _calculate_optimal_length(title: str, analysis: dict, base_length: int = 120) -> int:
+    """Calculate optimal length for a title based on pattern analysis.
+    
+    Args:
+        title: Title to optimize
+        analysis: Pattern analysis results
+        base_length: Base maximum length
+        
+    Returns:
+        Optimal length for this specific title
+    """
+    if not analysis or not analysis.get('needs_aggressive_dedup'):
+        return base_length
+    
+    # Check if this title is part of a similar group
+    words = title.split()
+    if len(words) >= 3:
+        prefix_3 = ' '.join(words[:3])
+        prefix_4 = ' '.join(words[:4]) if len(words) >= 4 else prefix_3
+        
+        for prefix in [prefix_4, prefix_3]:
+            if prefix in analysis.get('similar_groups', {}):
+                group_size = len(analysis['similar_groups'][prefix])
+                if group_size >= 3:
+                    # For highly similar groups, allow more length to preserve distinguishing content
+                    return min(base_length + 20, 150)  # Allow up to 150 chars for similar groups
+    
+    return base_length
 
 
 def preview_operations(operations: List[RenameOperation]) -> None:

@@ -187,6 +187,8 @@ def optimize_filename(title: str, max_length: int = 120, existing_names: set = N
 def _progressive_truncate_with_uniqueness(title: str, max_length: int, existing_names: set = None) -> str:
     """Apply progressive truncation to maintain uniqueness while optimizing length.
     
+    Uses intelligent strategies to preserve meaningful content and differentiate similar titles.
+    
     Args:
         title: Clean title to truncate
         max_length: Maximum allowed length
@@ -230,24 +232,29 @@ def _progressive_truncate_with_uniqueness(title: str, max_length: int, existing_
                 return candidate
         return title[:max_length]  # Fallback
 
-    # Try different truncation lengths, starting from max and working down
-    # Only if we need to truncate due to length or conflict
-    min_meaningful_length = max(max_length // 3, 15)  # Keep at least 1/3 or 15 chars
+    # **NEW: Smart differentiation strategy for similar prefixes**
+    # Try to identify and preserve unique distinguishing parts
+    unique_candidate = _find_unique_differentiated_truncation(title, max_length, existing_names)
+    if unique_candidate:
+        return unique_candidate
 
-    for attempt_length in range(max_length - 3, min_meaningful_length - 1, -5):
-        # Find good word boundary for truncation
-        truncate_pos = attempt_length
-        
-        # Try to break at word boundary within reasonable range
-        last_space = title.rfind(' ', attempt_length - 10, attempt_length)
-        if last_space > max(attempt_length - 15, attempt_length // 2):
-            truncate_pos = last_space
+    # Fallback to progressive truncation with improved word boundary detection
+    min_meaningful_length = max(max_length // 2, 20)  # Keep at least half or 20 chars (improved)
 
+    # **NEW: More granular truncation steps** 
+    for attempt_length in range(max_length - 3, min_meaningful_length - 1, -2):  # Smaller steps
+        # **NEW: Improved word boundary detection**
+        truncate_pos = _find_optimal_truncation_point(title, attempt_length)
         candidate = title[:truncate_pos] + "..."
         
         # Check if this candidate is unique
         if candidate.lower() not in existing_lower:
             return candidate
+
+    # **NEW: Try preserving key differentiating words before resorting to hash**
+    differentiated = _preserve_key_differences(title, max_length, existing_names)
+    if differentiated and differentiated.lower() not in existing_lower:
+        return differentiated
 
     # If all attempts fail, create a unique name with hash suffix
     import hashlib
@@ -270,6 +277,160 @@ def _progressive_truncate_with_uniqueness(title: str, max_length: int, existing_
         final_result = f"{base}{hash_suffix}"
     
     return final_result
+
+
+def _find_unique_differentiated_truncation(title: str, max_length: int, existing_names: set) -> str:
+    """Find a truncation that preserves unique distinguishing elements.
+    
+    Args:
+        title: Title to truncate
+        max_length: Maximum length allowed
+        existing_names: Existing names to differentiate from
+        
+    Returns:
+        Differentiated truncation or empty string if none found
+    """
+    if not existing_names:
+        return ""
+    
+    # Split title into words
+    words = title.split()
+    if len(words) < 2:
+        return ""
+        
+    # Find words that might be unique differentiators
+    existing_words_sets = []
+    for existing in existing_names:
+        # Extract words from existing names (clean up "..." if present)
+        existing_clean = existing.replace("...", "").strip()
+        existing_words_sets.append(set(existing_clean.lower().split()))
+    
+    # Find words in current title that don't appear in existing names
+    title_words = set(word.lower() for word in words)
+    unique_words = []
+    
+    for i, word in enumerate(words):
+        word_lower = word.lower()
+        # Check if this word appears in any existing name
+        appears_in_existing = any(word_lower in existing_words for existing_words in existing_words_sets)
+        if not appears_in_existing and len(word) > 2:  # Ignore very short words
+            unique_words.append((i, word))
+    
+    if not unique_words:
+        return ""
+    
+    # Try to build a truncation that includes unique words
+    # Strategy: Keep prefix + unique identifying word(s)
+    prefix_length = min(len(' '.join(words[:3])), max_length // 2)  # Up to first 3 words or half length
+    remaining_space = max_length - prefix_length - 3  # Reserve space for "..."
+    
+    if remaining_space > 0:
+        # Find the most important unique word that fits
+        for pos, unique_word in unique_words:
+            if len(unique_word) <= remaining_space:
+                # Build: prefix + ... + unique_word
+                prefix = ' '.join(words[:min(3, pos)])
+                if len(prefix) + len(unique_word) + 4 <= max_length:  # +4 for " ..." 
+                    candidate = f"{prefix}...{unique_word}"
+                    return candidate
+    
+    return ""
+
+
+def _find_optimal_truncation_point(title: str, target_length: int) -> int:
+    """Find the optimal point to truncate text, preferring word boundaries.
+    
+    Args:
+        title: Text to truncate
+        target_length: Target length for truncation
+        
+    Returns:
+        Position to truncate at
+    """
+    if len(title) <= target_length:
+        return len(title)
+    
+    # Look for word boundaries near the target length
+    search_start = max(0, target_length - 15)
+    search_end = min(len(title), target_length + 5)
+    
+    # Find the best word boundary within the search range
+    best_pos = target_length
+    
+    # Look for sentence endings first (periods, exclamation, question marks)
+    for pos in range(search_end - 1, search_start - 1, -1):
+        if pos < len(title) and title[pos] in '.!?':
+            if pos <= target_length - 2:  # Leave room for "..."
+                return pos + 1
+    
+    # Look for clause boundaries (commas, colons, semicolons)
+    for pos in range(search_end - 1, search_start - 1, -1):
+        if pos < len(title) and title[pos] in ',:;':
+            if pos <= target_length - 2:
+                return pos + 1
+    
+    # Look for word boundaries (spaces)
+    for pos in range(target_length, search_start - 1, -1):
+        if pos < len(title) and title[pos] == ' ':
+            return pos
+    
+    # If no good boundary found, use target length
+    return target_length
+
+
+def _preserve_key_differences(title: str, max_length: int, existing_names: set) -> str:
+    """Try to preserve key differentiating words in the title.
+    
+    Args:
+        title: Title to process
+        max_length: Maximum length
+        existing_names: Existing names to differentiate from
+        
+    Returns:
+        Title with key differences preserved, or empty string if not possible
+    """
+    if not existing_names or max_length < 20:
+        return ""
+    
+    words = title.split()
+    if len(words) < 3:
+        return ""
+    
+    # Find words that are likely to be differentiators
+    # Look for: technology terms, proper nouns, numbers, distinctive adjectives
+    differentiator_patterns = [
+        r'\b[A-Z][a-z]+\b',  # Proper nouns (capitalized words)
+        r'\b\d+\b',           # Numbers
+        r'\b(?:Python|Java|JavaScript|React|Vue|Angular|TypeScript|Node|PHP|Ruby|Go|Rust|C\+\+|C#)\b',  # Tech terms
+        r'\b(?:Advanced|Ultimate|Complete|Comprehensive|Practical|Modern|Professional|Essential)\b',  # Descriptive adjectives
+        r'\b(?:Guide|Tutorial|Course|Introduction|Handbook|Manual|Reference)\b'  # Content types
+    ]
+    
+    import re
+    differentiator_words = []
+    
+    for i, word in enumerate(words):
+        for pattern in differentiator_patterns:
+            if re.search(pattern, word, re.IGNORECASE):
+                differentiator_words.append((i, word))
+                break
+    
+    if not differentiator_words:
+        return ""
+    
+    # Try to build a meaningful truncation
+    # Strategy: first few words + ... + key differentiator(s)
+    prefix_words = words[:2]  # Start with first 2 words
+    
+    # Find the best differentiator to include
+    for pos, diff_word in differentiator_words:
+        prefix_text = ' '.join(prefix_words)
+        candidate = f"{prefix_text}...{diff_word}"
+        
+        if len(candidate) <= max_length:
+            return candidate
+    
+    return ""
 
 
 def encode_url_for_filename(url: str, max_length: int = 180) -> str:

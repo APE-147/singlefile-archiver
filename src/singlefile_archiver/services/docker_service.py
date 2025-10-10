@@ -187,7 +187,7 @@ class DockerService:
             return ArchiveResult(success=False, error=error_msg)
 
     def _derive_output_file(self, url: str, html_content: str, output_dir: Path) -> Path:
-        """Generate a readable output filename based on page title."""
+        """Generate a readable output filename based on page title with enhanced content preservation."""
         title: Optional[str] = None
 
         if html_content:
@@ -206,11 +206,13 @@ class DockerService:
 
         # Check feature flags for filename optimization
         use_optimization = os.getenv('FF_FILENAME_OPTIMIZATION', 'false').lower() == 'true'
+        use_enhanced_naming = os.getenv('FF_ENHANCED_CONTENT_NAMING', 'true').lower() == 'true'
 
-        if use_optimization:
-            # Use new optimized filename generation with deduplication
-            # For single file operations, we don't have existing names context
-            # The deduplication will be more effective in batch operations
+        if use_optimization and use_enhanced_naming:
+            # **NEW: Use enhanced content preservation strategy**
+            base = self._generate_enhanced_filename(title, url)
+        elif use_optimization:
+            # Use existing optimized filename generation
             base = build_canonical_basename(title, url, max_title_length=100)
         else:
             # Legacy filename generation (backward compatibility)
@@ -228,25 +230,99 @@ class DockerService:
             sanitized += '.html'
 
         candidate = output_dir / sanitized
+        
+        # **ENHANCED: Better duplicate handling with semantic preservation**
         if candidate.exists():
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-
-            if use_optimization:
-                # For optimized filenames, add timestamp to the title portion
-                # Pass existing filename as context to avoid further conflicts
-                existing_names = {candidate.stem.lower()}
-                optimized_title = optimize_filename(f"{title} {timestamp}", max_length=100, existing_names=existing_names)
-                base_with_timestamp = build_canonical_basename(optimized_title, url, max_title_length=100, existing_names=existing_names)
-            else:
-                # Legacy approach
-                base_with_timestamp = f"{base}_{timestamp}"
-
-            sanitized = safe_filename(base_with_timestamp)
-            if not sanitized.endswith('.html'):
-                sanitized += '.html'
-            candidate = output_dir / sanitized
+            candidate = self._resolve_filename_conflict(candidate, title, url, use_enhanced_naming)
 
         return candidate
+
+    def _generate_enhanced_filename(self, title: str, url: str) -> str:
+        """Generate enhanced filename using the new content preservation strategy.
+        
+        Args:
+            title: Page title
+            url: Source URL
+            
+        Returns:
+            Enhanced filename base (without extension)
+        """
+        # Import the enhanced functions from optimize module
+        from ..commands.optimize import (
+            create_standardized_filename, 
+            create_enhanced_content_filename,
+            _has_url_indicators
+        )
+        
+        # **FIXED: Check if the TITLE contains URL indicators, not create mock with URL**
+        # This determines if we should show URL info or focus on content
+        has_url_info = _has_url_indicators(title)
+        
+        try:
+            if has_url_info:
+                # Use standardized URL format
+                return create_standardized_filename(title, url, max_length=200)
+            else:
+                # Use enhanced content preservation format  
+                return create_enhanced_content_filename(title, max_length=220)
+        except Exception as e:
+            logger.warning(f"Failed to generate enhanced filename for {title[:50]}...: {e}")
+            # Fallback to canonical format
+            return build_canonical_basename(title, url, max_title_length=120)
+
+    def _resolve_filename_conflict(self, candidate: Path, title: str, url: str, use_enhanced: bool) -> Path:
+        """Resolve filename conflicts with better content preservation.
+        
+        Args:
+            candidate: Original candidate path
+            title: Page title  
+            url: Source URL
+            use_enhanced: Whether to use enhanced naming
+            
+        Returns:
+            Resolved unique path
+        """
+        if not candidate.exists():
+            return candidate
+            
+        base_stem = candidate.stem
+        extension = candidate.suffix
+        output_dir = candidate.parent
+        
+        # Get existing files to avoid conflicts
+        existing_files = {f.stem.lower() for f in output_dir.glob('*.html')}
+        
+        if use_enhanced:
+            # Use enhanced conflict resolution
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            
+            # Try to preserve content while adding uniqueness
+            from ..commands.optimize import _ensure_unique_filename
+            
+            # Add timestamp to title and regenerate
+            timestamped_title = f"{title} {timestamp}"
+            enhanced_base = self._generate_enhanced_filename(timestamped_title, url)
+            unique_base = _ensure_unique_filename(enhanced_base, existing_files)
+            
+            new_candidate = output_dir / f"{safe_filename(unique_base)}{extension}"
+            
+        else:
+            # Legacy timestamp approach
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            new_stem = f"{base_stem}_{timestamp}"
+            new_candidate = output_dir / f"{new_stem}{extension}"
+        
+        # Final safety check
+        counter = 1
+        while new_candidate.exists() and counter < 100:
+            if use_enhanced:
+                extra_unique = f"{unique_base}_{counter:02d}"
+                new_candidate = output_dir / f"{safe_filename(extra_unique)}{extension}"
+            else:
+                new_candidate = output_dir / f"{base_stem}_{timestamp}_{counter:02d}{extension}"
+            counter += 1
+        
+        return new_candidate
 
     def test_connection(self) -> ArchiveResult:
         """Test Docker connection with a simple container."""

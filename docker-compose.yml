@@ -14,6 +14,8 @@ services:
       - ARCHIVE_DIR=/data/archive
       - CHECK_INTERVAL=2
       - PYTHONUNBUFFERED=1
+      - FF_BATCH_PROCESSING=${FF_BATCH_PROCESSING:-true}
+      - FF_FILENAME_OPTIMIZATION=${FF_FILENAME_OPTIMIZATION:-true}
     restart: always
     healthcheck:
       test: ["CMD", "python", "-c", "print('healthy')"]

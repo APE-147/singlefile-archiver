@@ -58,14 +58,15 @@ def extract_title_from_filename(filename: str) -> str:
     return base_name
 
 
-def generate_optimized_filename(original_path: Path) -> str:
-    """Generate an optimized filename from the original.
+def generate_optimized_filename(original_path: Path, existing_names: set = None) -> str:
+    """Generate an optimized filename from the original with deduplication.
     
     Args:
         original_path: Path to the original file
+        existing_names: Set of existing filenames to avoid duplicates
         
     Returns:
-        Optimized filename
+        Optimized filename that doesn't conflict with existing names
     """
     original_name = original_path.stem
     extension = original_path.suffix
@@ -73,8 +74,8 @@ def generate_optimized_filename(original_path: Path) -> str:
     # Extract title from the filename
     title = extract_title_from_filename(original_name)
 
-    # Optimize the title
-    optimized_title = optimize_filename(title, max_length=120)
+    # Optimize the title with deduplication support
+    optimized_title = optimize_filename(title, max_length=120, existing_names=existing_names)
 
     # Create the new filename
     new_name = safe_filename(optimized_title) + extension
@@ -121,20 +122,41 @@ def scan_archive_directory(directory: Path, pattern: str = "*.html") -> List[Pat
 
 
 def generate_rename_operations(files: List[Path]) -> List[RenameOperation]:
-    """Generate rename operations for a list of files.
+    """Generate rename operations for a list of files with intelligent deduplication.
     
     Args:
         files: List of file paths to process
         
     Returns:
-        List of rename operations
+        List of rename operations with conflicts resolved through progressive truncation
     """
     operations = []
-    used_names = set()
+    used_final_names = set()  # Track final safe filenames
+    used_optimized_titles = set()  # Track optimized titles for deduplication
+    
+    # Build set of existing filenames in the directory for context
+    if files:
+        directory = files[0].parent
+        existing_files = {f.stem.lower() for f in directory.glob('*') if f.is_file()}
+    else:
+        existing_files = set()
 
+    # First pass: generate all potential names with proper deduplication
     for file_path in files:
         try:
-            new_name = generate_optimized_filename(file_path)
+            # Extract title from filename
+            original_name = file_path.stem
+            extension = file_path.suffix
+            title = extract_title_from_filename(original_name)
+            
+            # Optimize the title with deduplication based on already processed titles
+            optimized_title = optimize_filename(title, max_length=120, existing_names=used_optimized_titles)
+            
+            # Track this optimized title
+            used_optimized_titles.add(optimized_title.lower())
+            
+            # Create the new filename
+            new_name = safe_filename(optimized_title) + extension
             new_path = file_path.parent / new_name
 
             # Check for conflicts
@@ -144,11 +166,12 @@ def generate_rename_operations(files: List[Path]) -> List[RenameOperation]:
             if new_path.exists() and new_path != file_path:
                 conflict = True
                 reason = "Target file already exists"
-            elif new_name.lower() in used_names:
+            elif new_name.lower() in used_final_names:
+                # This should be very rare now with proper deduplication
                 conflict = True
-                reason = "Duplicate name generated"
+                reason = "Duplicate name generated (deduplication failed)"
             else:
-                used_names.add(new_name.lower())
+                used_final_names.add(new_name.lower())
 
             operation = RenameOperation(
                 old_path=file_path,
@@ -257,10 +280,35 @@ def optimize_filenames_command(
     2. Control filename length with intelligent truncation
     3. Apply consistent naming conventions
     """
-    # Check feature flag
+    # Check feature flag with improved user experience
     if not os.getenv('FF_BATCH_PROCESSING', 'false').lower() == 'true':
-        console.print("[red]Batch processing is disabled. Set FF_BATCH_PROCESSING=true to enable.[/red]")
-        raise typer.Exit(1)
+        console.print("[yellow]⚠️  Batch processing feature flag is not enabled.[/yellow]")
+        console.print()
+        console.print("[bold]To enable batch processing, you have several options:[/bold]")
+        console.print("1. [green]Set environment variable:[/green] export FF_BATCH_PROCESSING=true")
+        console.print("2. [green]Run with inline variable:[/green] FF_BATCH_PROCESSING=true python -m singlefile_archiver.commands.optimize [DIRECTORY]")
+        console.print("3. [green]Use the convenience script:[/green] python run_optimize.py [DIRECTORY] --dry-run")
+        console.print()
+        console.print("[dim]This safety feature prevents accidental bulk file operations.[/dim]")
+        console.print("[dim]Learn more in the documentation about feature flags and safety controls.[/dim]")
+        
+        # Offer to run with the flag enabled interactively
+        # Allow interactive enabling for dry-run (safe) or when not forced
+        if not force:
+            console.print()
+            if dry_run:
+                console.print("[dim]Since you're using --dry-run (safe preview mode), we can enable it temporarily.[/dim]")
+            enable_flag = Confirm.ask("Would you like to enable batch processing for this session?")
+            if enable_flag:
+                os.environ['FF_BATCH_PROCESSING'] = 'true'
+                console.print("[green]✓ Batch processing enabled for this session.[/green]")
+            else:
+                console.print("[yellow]Batch processing remains disabled. Exiting.[/yellow]")
+                raise typer.Exit(0)
+        else:
+            # Force mode without feature flag - exit with error
+            console.print("[red]Cannot use --force without enabling FF_BATCH_PROCESSING.[/red]")
+            raise typer.Exit(1)
 
     dir_path = Path(directory)
     if not dir_path.exists():

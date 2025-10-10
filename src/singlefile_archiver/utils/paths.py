@@ -121,47 +121,155 @@ def remove_emoji(text: str) -> str:
     return clean_text
 
 
-def optimize_filename(title: str, max_length: int = 120) -> str:
-    """Optimize a filename by removing emoji and controlling length.
+def _generate_fallback_name(base_name: str, existing_names: set = None) -> str:
+    """Generate a unique fallback name when title is empty or invalid.
+    
+    Args:
+        base_name: Base name to use (e.g., 'untitled')
+        existing_names: Set of existing names to avoid
+        
+    Returns:
+        Unique fallback name
+    """
+    if existing_names is None:
+        existing_names = set()
+    
+    existing_lower = {name.lower() for name in existing_names}
+    
+    if base_name.lower() not in existing_lower:
+        return base_name
+        
+    # Try numbered variations
+    for i in range(1, 1000):
+        candidate = f"{base_name}_{i}"
+        if candidate.lower() not in existing_lower:
+            return candidate
+    
+    # Last resort - use timestamp
+    from datetime import datetime
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    return f"{base_name}_{timestamp}"
+
+
+def optimize_filename(title: str, max_length: int = 120, existing_names: set = None) -> str:
+    """Optimize a filename by removing emoji and controlling length while ensuring uniqueness.
     
     Args:
         title: Original title/filename
         max_length: Maximum length for the optimized filename
+        existing_names: Set of existing filenames to avoid duplicates
         
     Returns:
-        Optimized filename with emoji removed and length controlled
+        Optimized filename with emoji removed, length controlled, and uniqueness ensured
     """
     if not title:
-        return "untitled"
+        return _generate_fallback_name("untitled", existing_names)
 
     # Remove emoji and problematic characters
     clean_title = remove_emoji(title)
 
     # If title is empty after emoji removal, use a fallback
     if not clean_title.strip():
-        return "untitled"
+        return _generate_fallback_name("untitled", existing_names)
 
     # Normalize whitespace and basic cleanup
     clean_title = re.sub(r'\s+', ' ', clean_title).strip()
 
-    # If still within length limit, return as-is
+    # If still within length limit and unique, return as-is
     if len(clean_title) <= max_length:
-        return clean_title
+        if existing_names is None or clean_title.lower() not in existing_names:
+            return clean_title
 
-    # Intelligent truncation at word boundary
+    # Progressive truncation strategy to maintain uniqueness
+    return _progressive_truncate_with_uniqueness(clean_title, max_length, existing_names)
+
+
+def _progressive_truncate_with_uniqueness(title: str, max_length: int, existing_names: set = None) -> str:
+    """Apply progressive truncation to maintain uniqueness while optimizing length.
+    
+    Args:
+        title: Clean title to truncate
+        max_length: Maximum allowed length
+        existing_names: Set of existing names to avoid conflicts
+        
+    Returns:
+        Truncated title that doesn't conflict with existing names
+    """
+    if existing_names is None:
+        existing_names = set()
+
+    # Handle very short max_length cases
     if max_length <= 3:
-        return clean_title[:max_length]
+        candidate = title[:max_length]
+        if candidate.lower() not in {name.lower() for name in existing_names}:
+            return candidate
+        # If even the short version conflicts, add a number
+        for i in range(1, 10):
+            if max_length > 1:
+                numbered = title[:max_length-1] + str(i)
+                if numbered.lower() not in {name.lower() for name in existing_names}:
+                    return numbered
+        return title[:max_length]  # Fallback
 
-    # Try to break at a word boundary
-    truncate_pos = max_length - 3  # Reserve space for "..."
+    # Convert existing names to lowercase for case-insensitive comparison
+    existing_lower = {name.lower() for name in existing_names}
 
-    # Find the last space before the truncation point
-    last_space = clean_title.rfind(' ', 0, truncate_pos)
+    # If no truncation needed and no conflict, return as-is
+    if len(title) <= max_length and title.lower() not in existing_lower:
+        return title
 
-    if last_space > max_length // 2:  # Only use word boundary if it's reasonable
-        return clean_title[:last_space] + "..."
-    else:
-        return clean_title[:truncate_pos] + "..."
+    # For very short limits, use simple truncation with numbering
+    if max_length <= 10:
+        base = title[:max_length-2] if max_length > 2 else title[:max_length]
+        for i in range(1, 100):
+            if max_length > 2:
+                candidate = f"{base}{i:02d}"
+            else:
+                candidate = f"{base}{i}"
+            if len(candidate) <= max_length and candidate.lower() not in existing_lower:
+                return candidate
+        return title[:max_length]  # Fallback
+
+    # Try different truncation lengths, starting from max and working down
+    # Only if we need to truncate due to length or conflict
+    min_meaningful_length = max(max_length // 3, 15)  # Keep at least 1/3 or 15 chars
+
+    for attempt_length in range(max_length - 3, min_meaningful_length - 1, -5):
+        # Find good word boundary for truncation
+        truncate_pos = attempt_length
+        
+        # Try to break at word boundary within reasonable range
+        last_space = title.rfind(' ', attempt_length - 10, attempt_length)
+        if last_space > max(attempt_length - 15, attempt_length // 2):
+            truncate_pos = last_space
+
+        candidate = title[:truncate_pos] + "..."
+        
+        # Check if this candidate is unique
+        if candidate.lower() not in existing_lower:
+            return candidate
+
+    # If all attempts fail, create a unique name with hash suffix
+    import hashlib
+    title_hash = hashlib.md5(title.encode('utf-8')).hexdigest()[:6]
+    
+    # Calculate how much space we have for the base
+    hash_suffix = f"...{title_hash}"
+    base_length = max_length - len(hash_suffix)
+    
+    if base_length <= 0:
+        # Very short limit, just use hash
+        return title_hash[:max_length]
+    
+    base = title[:base_length]
+    final_result = f"{base}{hash_suffix}"
+    
+    # Double-check length constraint
+    if len(final_result) > max_length:
+        base = title[:max(max_length - len(hash_suffix), 1)]
+        final_result = f"{base}{hash_suffix}"
+    
+    return final_result
 
 
 def encode_url_for_filename(url: str, max_length: int = 180) -> str:
@@ -185,21 +293,22 @@ def encode_url_for_filename(url: str, max_length: int = 180) -> str:
     return encoded[:max_length - 3] + "..."
 
 
-def build_canonical_basename(title: str, url: str, max_title_length: int = 120) -> str:
-    """Build a canonical basename for archived files.
+def build_canonical_basename(title: str, url: str, max_title_length: int = 120, existing_names: set = None) -> str:
+    """Build a canonical basename for archived files with deduplication.
     
     Args:
         title: Page title
         url: Source URL
         max_title_length: Maximum length for the title portion
+        existing_names: Set of existing basenames to avoid duplicates
         
     Returns:
-        Canonical basename without extension
+        Canonical basename without extension that's unique
     """
-    # Optimize the title (removes emoji and controls length)
-    optimized_title = optimize_filename(title, max_title_length)
+    # Optimize the title with deduplication (removes emoji and controls length)
+    optimized_title = optimize_filename(title, max_title_length, existing_names)
 
-    # Encode URL for filename
+    # Encode URL for filename - keep URL portion consistent
     url_part = encode_url_for_filename(url, 60)  # Shorter URL part to save space
 
     # Build the canonical format: (title) [URL] encoded_url

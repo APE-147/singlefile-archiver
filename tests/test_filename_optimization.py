@@ -242,7 +242,10 @@ class TestIntegration:
         assert len(safe_name) <= 255  # Filesystem limit
         assert "⭐️" not in safe_name
         assert "🔥" not in safe_name
-        assert "Amazing Product Review Must Read!" in safe_name
+        # The optimization should preserve at least the core title (even if truncated)
+        # Note: safe_filename converts spaces to underscores
+        assert "Amazing_Product_Review" in safe_name
+        assert "Must_Read" in safe_name
         assert "example.com" in safe_name
         
     def test_conflict_resolution_simulation(self):

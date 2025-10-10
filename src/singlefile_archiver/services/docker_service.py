@@ -208,7 +208,9 @@ class DockerService:
         use_optimization = os.getenv('FF_FILENAME_OPTIMIZATION', 'false').lower() == 'true'
 
         if use_optimization:
-            # Use new optimized filename generation
+            # Use new optimized filename generation with deduplication
+            # For single file operations, we don't have existing names context
+            # The deduplication will be more effective in batch operations
             base = build_canonical_basename(title, url, max_title_length=100)
         else:
             # Legacy filename generation (backward compatibility)
@@ -231,8 +233,10 @@ class DockerService:
 
             if use_optimization:
                 # For optimized filenames, add timestamp to the title portion
-                optimized_title = optimize_filename(f"{title} {timestamp}", max_length=100)
-                base_with_timestamp = build_canonical_basename(optimized_title, url, max_title_length=100)
+                # Pass existing filename as context to avoid further conflicts
+                existing_names = {candidate.stem.lower()}
+                optimized_title = optimize_filename(f"{title} {timestamp}", max_length=100, existing_names=existing_names)
+                base_with_timestamp = build_canonical_basename(optimized_title, url, max_title_length=100, existing_names=existing_names)
             else:
                 # Legacy approach
                 base_with_timestamp = f"{base}_{timestamp}"

@@ -5,10 +5,21 @@ services:
       dockerfile: Dockerfile.singlefile-python
     container_name: singlefile-cli
     volumes:
-      - ".:/data/scripts"
+      # Core application source code - live updates
+      - "./src:/data/scripts/src"
+      # Scripts directory for utilities and helpers
+      - "./scripts:/data/scripts/scripts"
+      # Configuration files that might be updated
+      - "./pyproject.toml:/data/scripts/pyproject.toml:ro"
+      - "./.env:/data/scripts/.env:ro"
+      # Container startup script (if modifications needed)
+      - "./container_startup_cli.sh:/usr/local/bin/container_startup_cli.sh:ro"
+      # Data directories
       - "${SINGLEFILE_INCOMING_DIR:-./data/incoming}:/data/incoming"
       - "${SINGLEFILE_ARCHIVE_DIR:-./data/archive}:/data/archive"
       - "./data/logs:/app/logs"
+      # Test files for development/debugging (optional, read-only)
+      - "./tests:/data/scripts/tests:ro"
     environment:
       - INCOMING_DIR=/data/incoming
       - ARCHIVE_DIR=/data/archive
@@ -16,6 +27,7 @@ services:
       - PYTHONUNBUFFERED=1
       - FF_BATCH_PROCESSING=${FF_BATCH_PROCESSING:-true}
       - FF_FILENAME_OPTIMIZATION=${FF_FILENAME_OPTIMIZATION:-true}
+      - PYTHONPATH=/data/scripts/src
     restart: always
     healthcheck:
       test: ["CMD", "python", "-c", "print('healthy')"]

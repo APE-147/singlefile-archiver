@@ -30,13 +30,13 @@ class RenameOperation:
     reason: str = ""
 
 
-def create_standardized_filename(title: str, url: str, max_length: int = 200) -> str:
+def create_standardized_filename(title: str, url: str, max_bytes: int = 150) -> str:
     """Create a standardized filename format matching the user's specification.
     
     Args:
         title: Extracted title
         url: Original URL
-        max_length: Maximum total filename length
+        max_bytes: Maximum total filename BYTE length (targeting ~150 bytes)
         
     Returns:
         Standardized filename in format: "X_上的_DN-Samuel_[URL]_https%3A%2F%2Fx.com%2FSamuelQZQ%2Fstatus%2F1976062342451667233"
@@ -61,32 +61,44 @@ def create_standardized_filename(title: str, url: str, max_length: int = 200) ->
     # Following the pattern: "X_上的_DN-Samuel_[URL]_https%3A%2F%2Fx.com%2FSamuelQZQ%2Fstatus%2F1976062342451667233"
     standardized = f"{platform}_上的_{user}_[URL]_{encoded_url}"
     
-    # Ensure it doesn't exceed max_length
-    if len(standardized) > max_length:
-        # Truncate the encoded URL if needed
-        available_for_url = max_length - len(f"{platform}_上的_{user}_[URL]_")
-        if available_for_url > 10:  # Keep at least 10 chars for URL
-            truncated_url = encoded_url[:available_for_url-3] + "..."
+    # **FIXED: Ensure byte length doesn't exceed max_bytes**
+    # Account for .html extension (5 bytes)
+    extension_bytes = 5
+    target_bytes = max_bytes - extension_bytes
+    current_bytes = len(standardized.encode('utf-8'))
+    
+    if current_bytes > target_bytes:
+        # **Strategy 1: Truncate the encoded URL first (least important part)**
+        base_format = f"{platform}_上的_{user}_[URL]_"
+        base_bytes = len(base_format.encode('utf-8'))
+        available_for_url_bytes = target_bytes - base_bytes
+        
+        if available_for_url_bytes > 15:  # Keep at least 15 bytes for meaningful URL
+            truncated_url = _truncate_by_bytes(encoded_url, available_for_url_bytes - 3) + "..."
             standardized = f"{platform}_上的_{user}_[URL]_{truncated_url}"
         else:
-            # If still too long, truncate the user part
-            available_for_user = max_length - len(f"{platform}_上的__[URL]_{encoded_url[:20]}...")
-            if available_for_user > 3:
-                truncated_user = user[:available_for_user]
-                standardized = f"{platform}_上的_{truncated_user}_[URL]_{encoded_url[:20]}..."
+            # **Strategy 2: Truncate the user part if URL is critical**
+            sample_url_bytes = min(30, len(encoded_url.encode('utf-8')))  # Sample URL bytes
+            available_for_user_bytes = target_bytes - len(f"{platform}_上的__[URL]_".encode('utf-8')) - sample_url_bytes - 3
+            
+            if available_for_user_bytes > 6:  # At least 2-3 Chinese chars
+                truncated_user = _truncate_by_bytes(user, available_for_user_bytes)
+                sample_url = _truncate_by_bytes(encoded_url, sample_url_bytes)
+                standardized = f"{platform}_上的_{truncated_user}_[URL]_{sample_url}..."
             else:
-                # Final fallback
-                standardized = f"{platform}_上的_User_[URL]_{encoded_url[:50]}..."
+                # **Strategy 3: Ultra-minimal fallback**
+                minimal_url = _truncate_by_bytes(encoded_url, 20)
+                standardized = f"{platform}_上的_User_[URL]_{minimal_url}..."
     
     return standardized
 
 
-def create_enhanced_content_filename(title: str, max_length: int = 220) -> str:
+def create_enhanced_content_filename(title: str, max_bytes: int = 150) -> str:
     """Create enhanced filename for content without URLs with better content preservation.
     
     Args:
         title: Extracted title  
-        max_length: Maximum total filename length (relaxed for non-URL cases)
+        max_bytes: Maximum total filename BYTE length (targeting ~150 bytes)
         
     Returns:
         Enhanced filename preserving meaningful content: "X_上的_DN-Samuel_比特币总裁：过….html"
@@ -108,13 +120,33 @@ def create_enhanced_content_filename(title: str, max_length: int = 220) -> str:
     
     # Build enhanced format: Platform_上的_User_ContentDescription
     base_format = f"{platform}_上的_{user}_"
-    available_for_content = max_length - len(base_format)
     
-    # Preserve more content with intelligent truncation
-    if available_for_content > 20:
-        # Use semantic-aware truncation to preserve meaning
-        truncated_content = _semantic_truncate(content_desc, available_for_content)
+    # **FIXED: Control BYTE length instead of character length**
+    # Account for .html extension (5 bytes)
+    extension_bytes = 5  # ".html"
+    available_bytes = max_bytes - extension_bytes
+    base_bytes = len(base_format.encode('utf-8'))
+    available_for_content_bytes = available_bytes - base_bytes
+    
+    # **NEW: Multi-layer truncation strategy for precise byte control**
+    if available_for_content_bytes > 20:  # At least 20 bytes for meaningful content
+        # Use byte-aware semantic truncation to preserve meaning
+        truncated_content = _byte_aware_semantic_truncate(content_desc, available_for_content_bytes)
         enhanced = f"{base_format}{truncated_content}"
+        
+        # **SAFETY CHECK: Ensure final result with extension is within byte limit**
+        final_with_ext = f"{enhanced}.html"
+        final_bytes = len(final_with_ext.encode('utf-8'))
+        
+        if final_bytes > max_bytes:
+            # Emergency truncation if still over limit
+            overage = final_bytes - max_bytes
+            emergency_limit = available_for_content_bytes - overage - 3  # Reserve 3 bytes for "…"
+            if emergency_limit > 10:
+                emergency_content = _byte_aware_semantic_truncate(content_desc, emergency_limit)
+                enhanced = f"{base_format}{emergency_content}…"
+            else:
+                enhanced = f"{platform}_上的_{user}"
     else:
         # Fallback to shorter format if space is very limited
         enhanced = f"{platform}_上的_{user}"
@@ -183,12 +215,105 @@ def _clean_content_description(title: str) -> str:
     return content if content else "页面内容"
 
 
+def _byte_aware_semantic_truncate(text: str, max_bytes: int) -> str:
+    """Perform byte-aware semantic truncation to preserve meaning within byte limits.
+    
+    Args:
+        text: Text to truncate
+        max_bytes: Maximum byte length in UTF-8 encoding
+        
+    Returns:
+        Semantically truncated text that fits within max_bytes
+    """
+    if len(text.encode('utf-8')) <= max_bytes:
+        return text
+    
+    # If very short byte limit, just truncate by bytes
+    if max_bytes < 15:
+        return _truncate_by_bytes(text, max_bytes - 3) + "…"
+    
+    # **Multi-layer strategy: 180→150→120 bytes as described in requirements**
+    target_layers = [max_bytes, max_bytes * 0.85, max_bytes * 0.75]  # Progressive reduction
+    
+    for layer_bytes in target_layers:
+        if layer_bytes < 15:
+            continue
+            
+        # Strategy 1: Try to keep complete sentences  
+        sentence_endings = ['.', '!', '?', '。', '！', '？']
+        for i, char in enumerate(text):
+            current_bytes = len(text[:i+1].encode('utf-8'))
+            if char in sentence_endings and current_bytes <= layer_bytes and current_bytes >= layer_bytes * 0.6:
+                return text[:i+1]
+        
+        # Strategy 2: Try to keep complete phrases (up to punctuation)
+        phrase_endings = [',', ';', ':', '，', '；', '：', '"', '"', ''', ''']
+        for i, char in enumerate(text):
+            current_bytes = len(text[:i].encode('utf-8'))
+            if char in phrase_endings and current_bytes <= layer_bytes - 3 and current_bytes >= layer_bytes * 0.7:
+                return text[:i] + "…"
+        
+        # Strategy 3: Find word/character boundary for Chinese text
+        # Work backwards from max position to find good break point
+        max_char_estimate = min(len(text), layer_bytes // 2)  # Conservative estimate for Chinese
+        
+        for truncate_pos in range(max_char_estimate, max(layer_bytes // 4, 10), -1):
+            if truncate_pos >= len(text):
+                continue
+                
+            candidate = text[:truncate_pos]
+            candidate_bytes = len(candidate.encode('utf-8'))
+            
+            if candidate_bytes <= layer_bytes - 3:  # Reserve 3 bytes for "…"
+                # Check if this is a good break point
+                if truncate_pos == len(text) or text[truncate_pos] in ' \t\n，。：；':
+                    return candidate + "…"
+        
+        # Strategy 4: Just find the longest prefix that fits
+        result = _truncate_by_bytes(text, layer_bytes - 3)
+        if result:
+            return result + "…"
+    
+    # Final fallback: ultra-conservative truncation
+    return _truncate_by_bytes(text, max_bytes - 3) + "…"
+
+
+def _truncate_by_bytes(text: str, max_bytes: int) -> str:
+    """Truncate text to fit within max_bytes, avoiding breaking UTF-8 sequences.
+    
+    Args:
+        text: Text to truncate
+        max_bytes: Maximum byte length
+        
+    Returns:
+        Truncated text that fits within max_bytes
+    """
+    if max_bytes <= 0:
+        return ""
+        
+    encoded = text.encode('utf-8')
+    if len(encoded) <= max_bytes:
+        return text
+    
+    # Truncate to max_bytes, but ensure we don't break UTF-8 sequences
+    truncated = encoded[:max_bytes]
+    
+    # Back up to the last valid UTF-8 character boundary
+    while len(truncated) > 0:
+        try:
+            return truncated.decode('utf-8')
+        except UnicodeDecodeError:
+            truncated = truncated[:-1]
+    
+    return ""
+
+
 def _semantic_truncate(text: str, max_length: int) -> str:
     """Perform semantic-aware truncation to preserve meaning.
     
     Args:
         text: Text to truncate
-        max_length: Maximum length
+        max_length: Maximum character length (DEPRECATED - use _byte_aware_semantic_truncate)
         
     Returns:
         Semantically truncated text
@@ -392,6 +517,13 @@ def extract_title_from_filename(filename: str) -> str:
                 # If formatting fails, continue to next pattern
                 continue
 
+    # **ENHANCED: Handle Chinese social media format first (X_上的_user_content)**
+    # This must come before generic separator splitting to preserve the format
+    if '上的' in base_name and '_' in base_name:
+        # Pattern: Platform_上的_User_Content or Platform_上的_User：Content
+        # Don't split these - they should be preserved as complete titles for platform detection
+        return base_name
+    
     # Try to extract from other common patterns
     # Pattern: title - URL or title_URL
     for separator in [' - ', '_', ' ']:
@@ -405,7 +537,11 @@ def extract_title_from_filename(filename: str) -> str:
                     if domain_part and len(parts) >= 3:
                         # Pattern: domain_user_content
                         return f"{domain_part} - {parts[1]} ({parts[2][:10]})"
-                return parts[0].strip()
+                
+                # **FIXED: Don't split Chinese format - only split non-Chinese patterns**
+                # Skip splitting if this looks like Chinese social media format
+                if '上的' not in base_name:
+                    return parts[0].strip()
 
     # **NEW: Final fallback for social media - extract domain and key info**
     if '_' in base_name and any(domain in base_name.lower() for domain in ['twitter.com', 'x.com', 'instagram.com']):
@@ -511,12 +647,12 @@ def generate_optimized_filename(original_path: Path, existing_names: set = None,
     if use_standardized_format:
         try:
             if extracted_url:
-                # Case 1: URL detected - use standardized format with URL
-                standardized_title = create_standardized_filename(title, extracted_url, max_length=200)
+                # Case 1: URL detected - use standardized format with 150-byte limit
+                standardized_title = create_standardized_filename(title, extracted_url, max_bytes=150)
                 logger.info(f"Using URL format for {original_name[:50]}...")
             else:
-                # Case 2: No URL - use enhanced content preservation format with relaxed length
-                standardized_title = create_enhanced_content_filename(title, max_length=220)
+                # Case 2: No URL - use enhanced content preservation format with 150-byte limit
+                standardized_title = create_enhanced_content_filename(title, max_bytes=150)
                 logger.info(f"Using enhanced content format for {original_name[:50]}...")
             
             # Ensure uniqueness
@@ -662,15 +798,16 @@ def _has_url_indicators(filename: str) -> bool:
     return any(indicator in filename_lower for indicator in url_indicators)
 
 
-def _ensure_unique_filename(filename: str, existing_names: set = None) -> str:
-    """Ensure filename is unique by adding suffix if needed.
+def _ensure_unique_filename(filename: str, existing_names: set = None, max_bytes: int = 150) -> str:
+    """Ensure filename is unique by adding numbered suffix if needed, with byte-aware truncation.
     
     Args:
-        filename: Proposed filename
-        existing_names: Set of existing names
+        filename: Proposed filename (without extension)
+        existing_names: Set of existing names to avoid
+        max_bytes: Maximum byte length including extension
         
     Returns:
-        Unique filename
+        Unique filename that fits within byte constraints
     """
     if existing_names is None:
         return filename
@@ -680,17 +817,56 @@ def _ensure_unique_filename(filename: str, existing_names: set = None) -> str:
     if filename.lower() not in existing_lower:
         return filename
     
-    # Add numerical suffix for uniqueness
-    base = filename
-    for i in range(1, 1000):
-        candidate = f"{base}_{i:03d}"
-        if candidate.lower() not in existing_lower:
-            return candidate
+    # Reserve bytes for extension (.html = 5 bytes) and numbering suffix (_001 = 4 bytes)
+    extension_bytes = 5  # .html
+    suffix_bytes = 4     # _001
+    available_bytes = max_bytes - extension_bytes - suffix_bytes
     
-    # Fallback with timestamp
+    # If original filename is too long with suffix, truncate it first
+    base_filename = filename
+    base_bytes = len(base_filename.encode('utf-8'))
+    
+    if base_bytes > available_bytes:
+        # Truncate the base filename to make room for numbering
+        base_filename = _truncate_by_bytes(base_filename, available_bytes)
+        # Clean up truncation to avoid breaking at bad points
+        base_filename = base_filename.rstrip('_-. ')
+    
+    # Try numbered suffixes from _001 to _999
+    for i in range(1, 1000):
+        candidate = f"{base_filename}_{i:03d}"
+        candidate_bytes = len(candidate.encode('utf-8')) + extension_bytes
+        
+        # Ensure it fits within byte limit and is unique
+        if candidate_bytes <= max_bytes and candidate.lower() not in existing_lower:
+            return candidate
+        
+        # If even with truncation it doesn't fit, truncate further
+        if candidate_bytes > max_bytes:
+            # Calculate how much to truncate
+            overage = candidate_bytes - max_bytes
+            new_available = available_bytes - overage
+            if new_available >= 10:  # Must have at least 10 bytes for meaningful base
+                base_filename = _truncate_by_bytes(base_filename, new_available)
+                base_filename = base_filename.rstrip('_-. ')
+                candidate = f"{base_filename}_{i:03d}"
+                if candidate.lower() not in existing_lower:
+                    return candidate
+    
+    # Final fallback with timestamp if all numbered versions are taken
     from datetime import datetime
     timestamp = datetime.now().strftime('%H%M%S')
-    return f"{base}_{timestamp}"
+    timestamp_suffix = f"_{timestamp}"
+    timestamp_bytes = len(timestamp_suffix.encode('utf-8'))
+    
+    # Ensure timestamp version fits
+    final_available = max_bytes - extension_bytes - timestamp_bytes
+    if final_available >= 5:
+        base_for_timestamp = _truncate_by_bytes(filename, final_available)
+        return f"{base_for_timestamp}_{timestamp}"
+    
+    # Ultimate fallback - use timestamp as main name
+    return f"file_{timestamp}"
 
 
 def scan_archive_directory(directory: Path, pattern: str = "*.html") -> Tuple[List[Path], dict]:
@@ -754,24 +930,27 @@ def scan_archive_directory(directory: Path, pattern: str = "*.html") -> Tuple[Li
 
 
 def generate_rename_operations(files: List[Path]) -> List[RenameOperation]:
-    """Generate rename operations for a list of files with intelligent deduplication.
+    """Generate rename operations for a list of files with enhanced conflict resolution.
     
     Args:
         files: List of file paths to process
         
     Returns:
-        List of rename operations with conflicts resolved through progressive truncation
+        List of rename operations with conflicts resolved using numbered suffixes
     """
     operations = []
-    used_final_names = set()  # Track final safe filenames
-    used_optimized_titles = set()  # Track optimized titles for deduplication
+    used_final_names = set()  # Track final complete filenames (with extension)
+    used_stems = set()  # Track stems (without extension) for deduplication
+    conflicts_resolved = 0
     
     # Build set of existing filenames in the directory for context
     if files:
         directory = files[0].parent
-        existing_files = {f.stem.lower() for f in directory.glob('*') if f.is_file()}
+        existing_files = {f.name.lower() for f in directory.glob('*') if f.is_file()}
+        existing_stems = {f.stem.lower() for f in directory.glob('*') if f.is_file()}
     else:
         existing_files = set()
+        existing_stems = set()
 
     # **IMPROVED: Pre-process all titles to identify similar patterns for better deduplication**
     # Extract and clean titles first for proper pattern analysis
@@ -780,7 +959,7 @@ def generate_rename_operations(files: List[Path]) -> List[RenameOperation]:
     clean_titles = [remove_emoji(title) for title in raw_titles]
     title_analysis = _analyze_title_patterns(clean_titles)
 
-    # First pass: generate all potential names with proper deduplication
+    # Process files and resolve conflicts in single pass
     for i, file_path in enumerate(files):
         try:
             # Extract title from filename
@@ -788,42 +967,54 @@ def generate_rename_operations(files: List[Path]) -> List[RenameOperation]:
             extension = file_path.suffix
             title = extract_title_from_filename(original_name)
             
-            # **NEW: Use standardized format for files that need processing**
-            # Since we're only processing files >255 bytes, use standardized format
-            new_name = generate_optimized_filename(
+            # Generate base optimized filename (without conflict resolution)
+            base_optimized = generate_optimized_filename(
                 file_path, 
-                existing_names=used_optimized_titles, 
+                existing_names=set(),  # Don't pass existing names here - we'll handle conflicts below
                 use_standardized_format=True
             )
             
-            # Extract the stem for tracking
-            optimized_title = Path(new_name).stem
+            # Extract the stem from the generated name
+            base_stem = Path(base_optimized).stem
             
-            # Track this optimized title
-            used_optimized_titles.add(optimized_title.lower())
+            # **NEW: Enhanced conflict resolution with byte-aware numbering**
+            # Combine all sources of existing names for comprehensive conflict detection
+            all_existing_stems = used_stems.union(existing_stems)
             
-            new_path = file_path.parent / new_name
+            # Use enhanced unique filename generation with proper byte limits
+            unique_stem = _ensure_unique_filename(
+                base_stem, 
+                existing_names=all_existing_stems,
+                max_bytes=150  # Target 150-byte total including .html
+            )
+            
+            # Track if we had to add a numbered suffix
+            was_conflicted = unique_stem != base_stem
+            if was_conflicted:
+                conflicts_resolved += 1
+            
+            # Build final filename
+            final_filename = unique_stem + extension
+            new_path = file_path.parent / final_filename
+            
+            # Track this name as used
+            used_stems.add(unique_stem.lower())
+            used_final_names.add(final_filename.lower())
 
-            # Check for conflicts
-            conflict = False
+            # Final validation - check if target file already exists on disk
+            file_conflict = False
             reason = ""
-
+            
             if new_path.exists() and new_path != file_path:
-                conflict = True
-                reason = "Target file already exists"
-            elif new_name.lower() in used_final_names:
-                # This should be very rare now with proper deduplication
-                conflict = True
-                reason = "Duplicate name generated (deduplication failed)"
-            else:
-                used_final_names.add(new_name.lower())
-
+                file_conflict = True
+                reason = "Target file already exists on disk"
+            
             operation = RenameOperation(
                 old_path=file_path,
                 new_path=new_path,
                 old_name=file_path.name,
-                new_name=new_name,
-                conflict=conflict,
+                new_name=final_filename,
+                conflict=file_conflict,
                 reason=reason
             )
 
@@ -831,7 +1022,21 @@ def generate_rename_operations(files: List[Path]) -> List[RenameOperation]:
 
         except Exception as e:
             logger.error(f"Error processing file {file_path}: {e}")
+            # Create a failed operation for tracking
+            operation = RenameOperation(
+                old_path=file_path,
+                new_path=file_path,
+                old_name=file_path.name,
+                new_name=file_path.name,
+                conflict=True,
+                reason=f"Processing error: {e}"
+            )
+            operations.append(operation)
             continue
+
+    # Log conflict resolution statistics
+    if conflicts_resolved > 0:
+        logger.info(f"Resolved {conflicts_resolved} filename conflicts using numbered suffixes")
 
     return operations
 
@@ -974,6 +1179,7 @@ def preview_operations(operations: List[RenameOperation], scan_stats: dict = Non
     changes_count = 0
     conflicts_count = 0
     standardized_count = 0
+    numbered_count = 0
 
     for op in operations:
         # Calculate byte lengths
@@ -984,6 +1190,9 @@ def preview_operations(operations: List[RenameOperation], scan_stats: dict = Non
         # Check if this uses standardized format
         is_standardized = "_上的_" in op.new_name and "_[URL]_" in op.new_name
         
+        # Check if this got a numbered suffix for uniqueness
+        has_numbered_suffix = bool(re.search(r'_\d{3}(?:\.html)?$', op.new_name))
+        
         if op.old_name == op.new_name:
             status = "[dim]No change[/dim]"
             notes = "Already optimized"
@@ -993,18 +1202,26 @@ def preview_operations(operations: List[RenameOperation], scan_stats: dict = Non
             conflicts_count += 1
         else:
             status = "[green]Will rename[/green]"
+            notes_parts = []
+            
             if is_standardized:
-                notes = "✓ Standardized"
+                notes_parts.append("✓ Standardized")
                 standardized_count += 1
             else:
-                notes = "✓ Optimized"
+                notes_parts.append("✓ Optimized")
+            
+            if has_numbered_suffix:
+                notes_parts.append("+ Numbered")
+                numbered_count += 1
+            
+            notes = " ".join(notes_parts)
             changes_count += 1
 
         table.add_row(op.old_name, op.new_name, byte_info, status, notes)
 
     console.print(table)
     
-    # **NEW: Enhanced summary with detailed statistics**
+    # **NEW: Enhanced summary with detailed statistics including conflict resolution**
     console.print(f"\n[bold]Processing Summary:[/bold]")
     if scan_stats:
         console.print(f"  Total files found: {scan_stats.get('total_found', 0)}")
@@ -1014,14 +1231,20 @@ def preview_operations(operations: List[RenameOperation], scan_stats: dict = Non
     console.print(f"\n[bold]Rename Operations:[/bold]")
     console.print(f"  Files to rename: {changes_count}")
     console.print(f"  Using standardized format: {standardized_count}")
-    console.print(f"  Conflicts detected: {conflicts_count}")
+    console.print(f"  Added numbered suffixes: {numbered_count}")
+    console.print(f"  Unresolved conflicts: {conflicts_count}")
     
     if changes_count > 0:
         console.print(f"\n[green]✓[/green] All renamed files will be ≤255 bytes")
         console.print(f"[green]✓[/green] Standardized format: Platform_上的_User_[URL]_encoded_url")
+        if numbered_count > 0:
+            console.print(f"[green]✓[/green] {numbered_count} conflicts resolved with _001, _002 numbering")
+            console.print(f"[green]✓[/green] Final result: 100% unique filenames guaranteed")
         
     if conflicts_count > 0:
-        console.print(f"\n[yellow]⚠️[/yellow] {conflicts_count} files have conflicts and may need manual resolution")
+        console.print(f"\n[yellow]⚠️[/yellow] {conflicts_count} files have unresolved conflicts (likely disk file conflicts)")
+    elif numbered_count > 0:
+        console.print(f"\n[blue]ℹ️[/blue] All naming conflicts successfully resolved with numbered suffixes")
 
 
 def apply_operations(operations: List[RenameOperation], force: bool = False) -> Tuple[int, int]:

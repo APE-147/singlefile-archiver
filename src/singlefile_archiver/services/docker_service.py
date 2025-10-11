@@ -260,11 +260,11 @@ class DockerService:
         
         try:
             if has_url_info:
-                # Use standardized URL format
-                return create_standardized_filename(title, url, max_length=200)
+                # Use standardized URL format with 150-byte limit
+                return create_standardized_filename(title, url, max_bytes=150)
             else:
-                # Use enhanced content preservation format  
-                return create_enhanced_content_filename(title, max_length=220)
+                # Use enhanced content preservation format with 150-byte limit
+                return create_enhanced_content_filename(title, max_bytes=150)
         except Exception as e:
             logger.warning(f"Failed to generate enhanced filename for {title[:50]}...: {e}")
             # Fallback to canonical format

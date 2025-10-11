@@ -1,0 +1,43 @@
+# Development-optimized Docker Compose configuration
+# This extends the base docker-compose.yml with additional development features
+
+services:
+  singlefile:
+    extends:
+      file: docker-compose.yml
+      service: singlefile
+    volumes:
+      # Core application source code - live updates
+      - "./src:/data/scripts/src"
+      # Scripts directory for utilities and helpers
+      - "./scripts:/data/scripts/scripts"
+      # Configuration files that might be updated
+      - "./pyproject.toml:/data/scripts/pyproject.toml:ro"
+      - "./.env:/data/scripts/.env:ro"
+      # Container startup script (if modifications needed)
+      - "./container_startup_cli.sh:/usr/local/bin/container_startup_cli.sh:ro"
+      # Data directories
+      - "${SINGLEFILE_INCOMING_DIR:-./data/incoming}:/data/incoming"
+      - "${SINGLEFILE_ARCHIVE_DIR:-./data/archive}:/data/archive"
+      - "./data/logs:/app/logs"
+      # Development-specific mounts
+      - "./tests:/data/scripts/tests"  # Read-write for test modifications
+      - ".:/data/scripts/project_root:ro"  # Access to entire project for debugging
+    environment:
+      - INCOMING_DIR=/data/incoming
+      - ARCHIVE_DIR=/data/archive
+      - CHECK_INTERVAL=2
+      - PYTHONUNBUFFERED=1
+      - FF_BATCH_PROCESSING=${FF_BATCH_PROCESSING:-true}
+      - FF_FILENAME_OPTIMIZATION=${FF_FILENAME_OPTIMIZATION:-true}
+      - PYTHONPATH=/data/scripts/src
+      # Development environment indicators
+      - DEVELOPMENT_MODE=true
+      - LOG_LEVEL=DEBUG
+    # Development-friendly settings
+    restart: "no"  # Don't auto-restart in dev mode
+    tty: true      # Enable interactive terminal
+    stdin_open: true  # Keep stdin open for interactive debugging
+
+  # Optional: Additional development services
+  # You can add database, redis, or other services here if needed

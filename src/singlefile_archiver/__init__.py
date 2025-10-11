@@ -1,5 +1,6 @@
 """SingleFile URL Archiver - A comprehensive archiving system with batch processing."""
 
-__version__ = "0.1.0"
-__author__ = "Your Name"
-__email__ = "your.email@example.com"
+from .version import __version__, get_version
+
+__author__ = "Development Team"
+__email__ = "team@example.com"

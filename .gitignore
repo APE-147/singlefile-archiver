@@ -1,4 +1,6 @@
 # === CRITICAL PRIVACY DATA PROTECTION ===
+# This section protects user data, personal configurations, and browsing history
+# NEVER commit any files from these patterns to prevent privacy exposure
 
 # Personal browsing history and URL data
 url_data/
@@ -8,25 +10,37 @@ Twitter.csv
 *_bookmarks.*
 *_history.*
 
-# Personal configuration with file paths
+# Personal configuration with file paths and user-specific settings
 data/config.json
 config.json
 config.local.json
 config.local.*.json
+project_settings.yaml
+project_settings.*.yaml
+settings.local.*
+config.*.local.*
 
-# Environment files with personal paths
+# Environment files with personal paths and credentials
 .env
 .env.*
+.env.local
+.env.*.local
+.env.production
+.env.production.local
+.env.development.local
 !.env.example
+!.env.template
 
-# Personal logs and runtime data
+# Personal logs and runtime data (may contain URLs, user behavior, file paths)
 logs/
 *.log
+*.log.*
 data/logs/
+data/logs/**
 singlefile-service*.log
 singlefile_archiver.log
 
-# Archive outputs and downloads
+# Archive outputs and downloads (user-downloaded web content)
 archives/
 downloads/
 output/
@@ -34,25 +48,67 @@ output/
 *.mhtml
 *.pdf
 data/archive/
+data/archive/**
 data/output/
+data/output/**
 incoming/
 data/incoming/
+data/incoming/**
+
+# Reports and generated outputs (may contain processed user data)
+data/reports/
+data/reports/**
+data/out/
+data/out/**
+reports/
+*.report
+*.report.*
+
+# Legacy and backup directories (may contain old sensitive configs)
+data/legacy/
+data/legacy/**
+legacy/
+*.old
 
 # Temporary and cache files
 data/temp/
+data/temp/**
 temp/
 tmp/
 cache/
 .cache/
 *.tmp
 *.temp
+*.cache
 
-# State files
+# State files (may contain runtime user data)
 state.*
 *.state
 data/state.*
 
+# Database files (may contain user data and application state)
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+data/*.db
+data/*.sqlite*
+
+# Backup and sync conflict files (contain duplicate sensitive data)
+*.backup
+*.bak
+*.old
+*~.nib
+*.sync-conflict-*
+*conflicted copy*
+.syncthing.*
+.stfolder
+.stversions/
+
 # === AUTHENTICATION & SECURITY ===
+# Protects credentials, authentication tokens, API keys, and certificates
 
 # Environment and secrets
 .env
@@ -62,30 +118,41 @@ data/state.*
 secrets.*
 *.secret
 *.secrets
+.secrets/
 
-# Authentication files
+# Authentication files (all common formats)
 cookies.*
 *.cookies
+*.cookies.txt
+*.cookies.json
 auth.*
 *.auth
 credentials.*
 *.credentials
 tokens.*
 *.tokens
+*.token
+session.*
+*.session
 
 # Keys and certificates
 *.key
 *.pem
 *.crt
+*.cer
 *.p12
 *.pfx
 id_rsa*
 *.ssh
+*.keystore
+*.jks
 
 # Docker secrets and volumes
 docker-secrets/
 docker-data/
 .docker/
+docker-compose.*.local.yml
+docker-compose.override.local.yml
 
 # === PYTHON DEVELOPMENT ===
 
